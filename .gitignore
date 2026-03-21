@@ -1,0 +1,12 @@
+# Node/Frontend
+node_modules/
+dist/
+
+# Python/Backend
+__pycache__/
+.venv/
+.ruff_cache/
+.env
+
+# OS Files
+.DS_Store

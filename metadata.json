@@ -1,0 +1,5 @@
+{
+  "name": "Shadow Evolution",
+  "description": "A generative design tool for creating 3D printable structures that cast specific shadows using simulated genetic algorithms and space colonization.",
+  "requestFramePermissions": []
+}
