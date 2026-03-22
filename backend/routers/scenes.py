@@ -1,5 +1,6 @@
 import base64
 import io
+import random
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from PIL import Image
 
 from models import (
+    AttractorPoint,
     EvolveScenesRequest,
     ExportObjRequest,
     Fitness,
@@ -19,7 +21,7 @@ from models import (
 )
 from scene import _evolve_scenes, _export_to_obj
 from sca import grow_tree
-from shadow import _generate_shadow_image
+from shadow import _generate_shadow_image, calculate_fitness
 from tree_gen import _generate_uuid
 from voxel import _calculate_intersection_volume
 
@@ -43,6 +45,17 @@ def abort_generation():
 def _reset_abort():
     global generation_aborted
     generation_aborted = False
+
+
+def _subsample_attractors(
+    attractors: list[AttractorPoint], drop_rate: float, seed: int
+) -> list[AttractorPoint]:
+    rng = random.Random(seed)
+    result = []
+    for a in attractors:
+        if rng.random() >= drop_rate:
+            result.append(a)
+    return result
 
 
 @router.post("/scenes/generate")
@@ -94,11 +107,29 @@ def generate_scenes(request: GenerateScenesRequest):
         genome = request.parent_genome if request.parent_genome else TreeGenome()
 
         for i in range(request.count):
-            current_attractors = attractors
+            unique_seed = random.randint(0, 1000000)
+            drop_rate = random.uniform(0.05, 0.10)
+            subsampled_attractors = _subsample_attractors(
+                attractors, drop_rate, unique_seed
+            )
+            current_attractors = subsampled_attractors
             existing_nodes = request.parent_nodes if has_parent else None
-            current_genome = genome
-            # FIX: generation = parent_generation + 1, or 0 for fresh
+            current_genome = TreeGenome(
+                influence_radius=genome.influence_radius,
+                kill_distance=genome.kill_distance,
+                growth_step=genome.growth_step,
+                repulsion_strength=genome.repulsion_strength,
+                attraction_strength=genome.attraction_strength,
+                repulsion_radius=genome.repulsion_radius,
+                max_children_per_node=genome.max_children_per_node,
+                wiggle_factor=genome.wiggle_factor,
+                random_seed=unique_seed,
+            ).mutate()
             generation = 0 if not has_parent else parent_generation + 1
+
+            print(
+                f"[DEBUG] Candidate {i}: seed={unique_seed}, attractors={len(current_attractors)}, drop_rate={drop_rate:.2f}"
+            )
 
             if request.run_until_complete:
                 all_nodes = list(existing_nodes) if existing_nodes else []
@@ -164,13 +195,17 @@ def generate_scenes(request: GenerateScenesRequest):
                 trees = all_nodes
                 shadow_url = _generate_shadow_image(trees, ref_width, ref_height)
 
+                shadow_match, printability = calculate_fitness(
+                    trees, request.targetShadows, ref_width, ref_height
+                )
+
                 scenes.append(
                     SceneData(
                         id=_generate_uuid(),
                         trees=trees,
                         fitness=Fitness(
-                            printability=0.8,
-                            shadowMatch=0.5,
+                            printability=printability,
+                            shadowMatch=shadow_match,
                         ),
                         shadowImageUrl=shadow_url,
                         generation=generation,
@@ -210,13 +245,20 @@ def generate_scenes(request: GenerateScenesRequest):
 
                 shadow_url = _generate_shadow_image(trees, ref_width, ref_height)
 
+                shadow_match, printability = calculate_fitness(
+                    trees, request.targetShadows, ref_width, ref_height
+                )
+                print(
+                    f"[DEBUG] Candidate {i}: shadow_match={shadow_match:.3f}, printability={printability:.3f}"
+                )
+
                 scenes.append(
                     SceneData(
                         id=_generate_uuid(),
                         trees=trees,
                         fitness=Fitness(
-                            printability=0.8,
-                            shadowMatch=0.5,
+                            printability=printability,
+                            shadowMatch=shadow_match,
                         ),
                         shadowImageUrl=shadow_url,
                         generation=generation,

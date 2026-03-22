@@ -72,23 +72,33 @@ class TreeGenome(BaseModel):
 
         random.seed(self.random_seed + random.randint(0, 10000))
 
-        def mutate_param(value: float, factor: float = 0.2) -> float:
-            return value * (1 + (random.random() - 0.5) * factor)
+        def mutate_param(value: float, mutation_range: float = 0.15) -> float:
+            change = (random.random() - 0.5) * 2 * mutation_range
+            new_value = value * (1 + change)
+            return max(value * 0.5, min(value * 1.5, new_value))
 
-        def mutate_int(value: int, factor: float = 0.2) -> int:
-            delta = int(value * factor)
-            return max(1, value + random.randint(-delta, delta))
+        def mutate_int(value: int, mutation_range: float = 0.15) -> int:
+            change = int(value * mutation_range)
+            if change < 1:
+                change = 1
+            new_value = value + random.randint(-change, change)
+            return max(1, new_value)
+
+        def mutate_bool(value: bool, flip_chance: float = 0.2) -> bool:
+            if random.random() < flip_chance:
+                return not value
+            return value
 
         return TreeGenome(
-            influence_radius=mutate_param(self.influence_radius, 0.3),
-            kill_distance=mutate_param(self.kill_distance, 0.2),
-            growth_step=mutate_param(self.growth_step, 0.25),
-            repulsion_strength=mutate_param(self.repulsion_strength, 0.4),
-            attraction_strength=mutate_param(self.attraction_strength, 0.2),
-            repulsion_radius=mutate_param(self.repulsion_radius, 0.3),
-            max_children_per_node=mutate_int(self.max_children_per_node, 0.3),
-            wiggle_factor=mutate_param(self.wiggle_factor, 0.5),
-            random_seed=random.randint(0, 100000),
+            influence_radius=mutate_param(self.influence_radius, 0.15),
+            kill_distance=mutate_param(self.kill_distance, 0.15),
+            growth_step=mutate_param(self.growth_step, 0.15),
+            repulsion_strength=mutate_param(self.repulsion_strength, 0.15),
+            attraction_strength=mutate_param(self.attraction_strength, 0.15),
+            repulsion_radius=mutate_param(self.repulsion_radius, 0.15),
+            max_children_per_node=mutate_int(self.max_children_per_node, 0.15),
+            wiggle_factor=mutate_param(self.wiggle_factor, 0.20),
+            random_seed=random.randint(0, 1000000),
         )
 
 

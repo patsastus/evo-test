@@ -1,11 +1,13 @@
 import base64
+import io
 from io import BytesIO
+from typing import Optional
 
 import numpy as np
 from PIL import Image
 
 from config import CANVAS_WIDTH, X_MIN, Z_MIN, Y_BASE
-from models import TreeNode
+from models import TreeNode, TargetShadow
 
 
 def calculate_wall_height(img_height: int, img_width: int) -> float:
@@ -166,3 +168,120 @@ def _draw_line(
 
             if dist_sq <= half_width_pix * half_width_pix:
                 shadow[py][px] = min(1.0, shadow[py][px] + 1.0)
+
+
+def _decode_image(image_data: str) -> np.ndarray:
+    if "data:" in image_data:
+        image_data = image_data.split(",")[1] if "," in image_data else image_data
+    image_bytes = base64.b64decode(image_data)
+    img = Image.open(io.BytesIO(image_bytes)).convert("L")
+    return np.array(img)
+
+
+def _get_shadow_arrays(
+    trees: list[TreeNode], reference_width: int, reference_height: int
+) -> tuple[np.ndarray, np.ndarray]:
+    img_width = reference_width
+    img_height = reference_height
+    half_width = img_width // 2
+    wall_height = calculate_wall_height(img_height, img_width)
+
+    node_map = {n.id: n for n in trees}
+    shadow_z = [[0.0] * half_width for _ in range(img_height)]
+    shadow_x = [[0.0] * half_width for _ in range(img_height)]
+
+    for node in trees:
+        if not node.parentId:
+            continue
+        parent = node_map.get(node.parentId)
+        if not parent:
+            continue
+
+        p1_u, p1_v = node_to_z_wall_uv(parent.x, parent.y, parent.z, wall_height)
+        p2_u, p2_v = node_to_z_wall_uv(node.x, node.y, node.z, wall_height)
+        p1_px, p1_py = uv_to_pixel_left(p1_u, p1_v, img_height, half_width)
+        p2_px, p2_py = uv_to_pixel_left(p2_u, p2_v, img_height, half_width)
+        thickness = (node.radius + parent.radius) / 2
+        line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
+        _draw_line(shadow_z, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
+
+        p1_u, p1_v = node_to_x_wall_uv(parent.x, parent.y, parent.z, wall_height)
+        p2_u, p2_v = node_to_x_wall_uv(node.x, node.y, node.z, wall_height)
+        p1_px, p1_py = uv_to_pixel_right(p1_u, p1_v, img_height, half_width)
+        p2_px, p2_py = uv_to_pixel_right(p2_u, p2_v, img_height, half_width)
+        _draw_line(shadow_x, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
+
+    arr_z = np.array(shadow_z) > 0.5
+    arr_x = np.array(shadow_x) > 0.5
+    return arr_z, arr_x
+
+
+def calculate_fitness(
+    trees: list[TreeNode],
+    target_shadows: list[TargetShadow],
+    reference_width: int = 512,
+    reference_height: int = 153,
+) -> tuple[float, float]:
+    if not target_shadows or not trees:
+        return 0.0, 0.0
+
+    shadow_match_scores = []
+
+    for i, target in enumerate(target_shadows):
+        target_arr = _decode_image(target.imageData)
+        target_height, target_width = target_arr.shape
+
+        gen_z, gen_x = _get_shadow_arrays(trees, target_width, target_height)
+
+        gen_arr = gen_z if i == 0 else gen_x
+        target_arr_use = (
+            target_arr[:, : gen_arr.shape[1]]
+            if i == 0
+            else target_arr[:, target_width - gen_arr.shape[1] :]
+        )
+
+        target_dark = target_arr_use < 128
+        target_white = target_arr_use >= 128
+
+        target_pixels = target_dark.sum()
+        if target_pixels == 0:
+            shadow_match_scores.append(0.0)
+            continue
+
+        covered = (gen_arr & target_dark).sum()
+        false_positives = (gen_arr & target_white).sum()
+        total_gen = gen_arr.sum()
+        if total_gen == 0:
+            shadow_match_scores.append(0.0)
+            continue
+
+        coverage = covered / target_pixels
+        false_positive_rate = false_positives / total_gen if total_gen > 0 else 0
+        penalty = false_positive_rate * 0.3
+        score = max(0.0, min(1.0, coverage - penalty))
+        shadow_match_scores.append(score)
+
+    shadow_match = float(np.mean(shadow_match_scores)) if shadow_match_scores else 0.0
+
+    printability = calculate_printability(trees)
+
+    return shadow_match, printability
+
+
+def calculate_printability(trees: list[TreeNode]) -> float:
+    if not trees:
+        return 0.0
+
+    grounded_nodes = sum(1 for n in trees if n.y <= 0.6 and n.parentId is not None)
+
+    if grounded_nodes == 0:
+        return 0.0
+
+    max_y = max(n.y for n in trees) if trees else 0
+    aspect_ratio = max_y / 5.0 if max_y > 0 else 0
+
+    base_score = grounded_nodes / len(trees) if trees else 0
+    aspect_penalty = max(0, 1 - aspect_ratio / 2) * 0.3
+
+    score = base_score - aspect_penalty
+    return max(0.0, min(1.0, score))
