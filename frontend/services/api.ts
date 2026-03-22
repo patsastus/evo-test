@@ -1,15 +1,16 @@
-import { SceneData, GenerationParams, GeneticParams } from '../types';
+import { SceneData, GenerationParams, GeneticParams, TargetShadow } from '../types';
 
 const API_BASE = 'http://localhost:8000';
 
 export const generateInitialScenes = async (
   count: number,
-  params: GenerationParams
+  params: GenerationParams,
+  targetShadows: TargetShadow[]
 ): Promise<SceneData[]> => {
   const response = await fetch(`${API_BASE}/scenes/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ count, params }),
+    body: JSON.stringify({ count, params, targetShadows }),
   });
 
   if (!response.ok) {

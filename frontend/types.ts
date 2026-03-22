@@ -43,3 +43,8 @@ export interface Vec3 {
   y: number;
   z: number;
 }
+
+export interface TargetShadow {
+  imageData: string;
+  lightVector: Vec3;
+}

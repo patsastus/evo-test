@@ -2,8 +2,21 @@ import React, { useState } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { Gallery } from './components/Gallery';
 import { DetailModal } from './components/DetailModal';
-import { SceneData, GenerationParams, GeneticParams, AppState } from './types';
+import { SceneData, GenerationParams, GeneticParams, AppState, TargetShadow } from './types';
 import { generateInitialScenes, evolveScenes } from './services/api';
+
+const blobToBase64 = (blobUrl: string): Promise<string> => {
+  return fetch(blobUrl)
+    .then(res => res.blob())
+    .then(blob => {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    });
+};
 
 const App: React.FC = () => {
   // State
@@ -35,10 +48,24 @@ const App: React.FC = () => {
   };
 
   const handleCreateInitial = async () => {
+    if (!targetImage) return;
+    
     setAppState(AppState.GENERATING);
     setActiveTab('generated');
     try {
-      const newScenes = await generateInitialScenes(12, genParams);
+      const imageData = await blobToBase64(targetImage);
+      
+      const targetShadows: TargetShadow[] = [
+        {
+          imageData,
+          lightVector: { x: 1, y: 0, z: 2 },
+        },
+        {
+          imageData,
+          lightVector: { x: -2, y: 0, z: -1 },
+        },
+      ];
+      const newScenes = await generateInitialScenes(1, genParams, targetShadows);
       setScenes(newScenes);
       setAppState(AppState.IDLE);
     } catch (e) {
