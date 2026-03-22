@@ -7,58 +7,55 @@ from PIL import Image
 
 from config import (
     BOUNDS,
-    LIGHT_X,
-    LIGHT_Z,
-    WALL_HEIGHT_BASE,
-    WALL_WIDTH,
+    CANVAS_WIDTH,
+    X_MIN,
+    Z_MIN,
+    Y_BASE,
     Z_WALL_X,
     X_WALL_Z,
 )
 from models import AttractorPoint, TargetShadow
 
 
-def _project_orthographic_z_wall(
-    voxel: np.ndarray,
+def calculate_wall_height(img_height: int, img_width: int) -> float:
+    half_width = img_width // 2
+    half_aspect_ratio = img_height / half_width
+    return CANVAS_WIDTH * half_aspect_ratio
+
+
+def voxel_to_z_wall_uv(
+    vx: float, vy: float, vz: float, wall_height: float
 ) -> tuple[float, float]:
-    vx, vy, vz = voxel
-    u = vz
-    v = vy
+    u = (vz - Z_MIN) / CANVAS_WIDTH
+    v = (vy - Y_BASE) / wall_height
     return u, v
 
 
-def _project_orthographic_x_wall(
-    voxel: np.ndarray,
+def voxel_to_x_wall_uv(
+    vx: float, vy: float, vz: float, wall_height: float
 ) -> tuple[float, float]:
-    vx, vy, vz = voxel
-    u = vx
-    v = vy
+    u = (vx - X_MIN) / CANVAS_WIDTH
+    v = (vy - Y_BASE) / wall_height
     return u, v
 
 
-def _project_to_image_coords(
-    u: float,
-    v: float,
-    img_height: int,
-    half_width: int,
-    wall_height: float,
-    is_z_wall: bool,
-) -> Optional[tuple[int, int]]:
-    u_min = -5.0 if is_z_wall else -7.5
-    u_max = 7.5 if is_z_wall else 5.0
+def uv_to_pixel_left(
+    u: float, v: float, img_height: int, half_width: int
+) -> tuple[int, int]:
+    px = int(u * half_width)
+    py = int((1 - v) * img_height)
+    px = max(0, min(px, half_width - 1))
+    py = max(0, min(py, img_height - 1))
+    return px, py
 
-    if u < u_min or u > u_max:
-        return None
-    if v < WALL_HEIGHT_BASE or v > WALL_HEIGHT_BASE + wall_height:
-        return None
 
-    px = int((u - u_min) / (u_max - u_min) * (half_width - 1))
-    if is_z_wall:
-        px = int((u - (-5)) / 12.5 * (half_width - 1))
-    else:
-        px = half_width + int((u - (-7.5)) / 12.5 * (half_width - 1))
-
-    py = int((1 - (v - WALL_HEIGHT_BASE) / wall_height) * (img_height - 1))
-
+def uv_to_pixel_right(
+    u: float, v: float, img_height: int, half_width: int
+) -> tuple[int, int]:
+    px = int(u * half_width)
+    py = int((1 - v) * img_height)
+    px = max(0, min(px, half_width - 1))
+    py = max(0, min(py, img_height - 1))
     return px, py
 
 
@@ -102,49 +99,56 @@ def _calculate_intersection_volume(
     else:
         return [], []
 
-    for shadow, in_shadow_arr, in_light_arr, is_z_wall in [
-        (shadow_z, in_shadow_z, in_light_z, True),
-        (shadow_x, in_shadow_x, in_light_x, False),
-    ]:
-        image_data = shadow.imageData
+    def decode_image(target: TargetShadow) -> np.ndarray:
+        image_data = target.imageData
         if "data:" in image_data:
             image_data = image_data.split(",")[1] if "," in image_data else image_data
-
         image_bytes = base64.b64decode(image_data)
         img = Image.open(io.BytesIO(image_bytes)).convert("L")
-        img_array = np.array(img)
-        img_height, img_width = img_array.shape
+        return np.array(img)
 
-        half_width = img_width // 2
-        aspect_ratio = img_height / half_width
-        wall_height = WALL_WIDTH * aspect_ratio
+    img_array_z = decode_image(shadow_z)
+    img_array_x = decode_image(shadow_x)
 
-        shadow_mask = img_array < 128
-        white_mask = img_array >= 128
+    img_height, img_width = img_array_z.shape
+    half_width = img_width // 2
+    wall_height = calculate_wall_height(img_height, img_width)
 
-        for vi, voxel in enumerate(voxel_centers):
-            vx, vy, vz = voxel
+    shadow_mask_z = img_array_z < 128
+    white_mask_z = img_array_z >= 128
+    shadow_mask_x = img_array_x < 128
+    white_mask_x = img_array_x >= 128
 
-            if is_z_wall:
-                u, v = _project_orthographic_z_wall(voxel)
-            else:
-                u, v = _project_orthographic_x_wall(voxel)
+    left_shadow = shadow_mask_z[:, :half_width]
+    left_white = white_mask_z[:, :half_width]
+    right_shadow = shadow_mask_x[:, half_width:]
+    right_white = white_mask_x[:, half_width:]
 
-            coords = _project_to_image_coords(
-                u, v, img_height, half_width, wall_height, is_z_wall
-            )
+    for vi, voxel in enumerate(voxel_centers):
+        vx, vy, vz = voxel
 
-            if coords is None:
-                continue
+        if vx < X_MIN or vx > BOUNDS["maxX"]:
+            continue
+        if vz < Z_MIN or vz > BOUNDS["maxZ"]:
+            continue
+        if vy < Y_BASE or vy > Y_BASE + wall_height:
+            continue
 
-            px, py = coords
-            px = np.clip(px, 0, img_width - 1)
-            py = np.clip(py, 0, img_height - 1)
+        u_z, v_z = voxel_to_z_wall_uv(vx, vy, vz, wall_height)
+        px_z, py_z = uv_to_pixel_left(u_z, v_z, img_height, half_width)
 
-            if shadow_mask[py, px]:
-                in_shadow_arr[vi] = True
-            elif white_mask[py, px]:
-                in_light_arr[vi] = True
+        u_x, v_x = voxel_to_x_wall_uv(vx, vy, vz, wall_height)
+        px_x, py_x = uv_to_pixel_right(u_x, v_x, img_height, half_width)
+
+        if left_shadow[py_z, px_z]:
+            in_shadow_z[vi] = True
+        elif left_white[py_z, px_z]:
+            in_light_z[vi] = True
+
+        if right_shadow[py_x, px_x]:
+            in_shadow_x[vi] = True
+        elif right_white[py_x, px_x]:
+            in_light_x[vi] = True
 
     attractor_mask = in_shadow_z & in_shadow_x
     repulsion_mask = in_light_z | in_light_x

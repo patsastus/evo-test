@@ -4,42 +4,49 @@ from io import BytesIO
 import numpy as np
 from PIL import Image
 
-from config import WALL_HEIGHT_BASE, WALL_WIDTH
+from config import CANVAS_WIDTH, X_MIN, Z_MIN, Y_BASE
 from models import TreeNode
 
 
-def _project_orthographic_z_wall(
-    wx: float, wy: float, wz: float
+def calculate_wall_height(img_height: int, img_width: int) -> float:
+    half_width = img_width // 2
+    half_aspect_ratio = img_height / half_width
+    return CANVAS_WIDTH * half_aspect_ratio
+
+
+def node_to_z_wall_uv(
+    wx: float, wy: float, wz: float, wall_height: float
 ) -> tuple[float, float]:
-    return wz, wy
+    u = (wz - Z_MIN) / CANVAS_WIDTH
+    v = (wy - Y_BASE) / wall_height
+    return u, v
 
 
-def _project_orthographic_x_wall(
-    wx: float, wy: float, wz: float
+def node_to_x_wall_uv(
+    wx: float, wy: float, wz: float, wall_height: float
 ) -> tuple[float, float]:
-    return wx, wy
+    u = (wx - X_MIN) / CANVAS_WIDTH
+    v = (wy - Y_BASE) / wall_height
+    return u, v
 
 
-def _project_to_image_coords(
-    u: float,
-    v: float,
-    img_height: int,
-    half_width: int,
-    wall_height: float,
-    is_z_wall: bool,
+def uv_to_pixel_left(
+    u: float, v: float, img_height: int, half_width: int
 ) -> tuple[int, int]:
-    if is_z_wall:
-        u_min, u_max = -5.0, 7.5
-        px = int((u - u_min) / (u_max - u_min) * (half_width - 1))
-    else:
-        u_min, u_max = -7.5, 5.0
-        px = half_width + int((u - u_min) / (u_max - u_min) * (half_width - 1))
-
-    py = int((1 - (v - WALL_HEIGHT_BASE) / wall_height) * (img_height - 1))
-
-    px = max(0, min(px, half_width * 2 - 1))
+    px = int(u * half_width)
+    py = int((1 - v) * img_height)
+    px = max(0, min(px, half_width - 1))
     py = max(0, min(py, img_height - 1))
+    return px, py
 
+
+def uv_to_pixel_right(
+    u: float, v: float, img_height: int, half_width: int
+) -> tuple[int, int]:
+    px = int(u * half_width)
+    py = int((1 - v) * img_height)
+    px = max(0, min(px, half_width - 1))
+    py = max(0, min(py, img_height - 1))
     return px, py
 
 
@@ -50,8 +57,7 @@ def _generate_shadow_image(
     img_height = reference_height
     half_width = img_width // 2
 
-    aspect_ratio = img_height / half_width
-    wall_height = WALL_WIDTH * aspect_ratio
+    wall_height = calculate_wall_height(img_height, img_width)
 
     node_map = {n.id: n for n in trees}
 
@@ -65,36 +71,28 @@ def _generate_shadow_image(
         if not parent:
             continue
 
-        p1_u, p1_v = _project_orthographic_z_wall(parent.x, parent.y, parent.z)
-        p2_u, p2_v = _project_orthographic_z_wall(node.x, node.y, node.z)
+        p1_u, p1_v = node_to_z_wall_uv(parent.x, parent.y, parent.z, wall_height)
+        p2_u, p2_v = node_to_z_wall_uv(node.x, node.y, node.z, wall_height)
 
-        p1_px, p1_py = _project_to_image_coords(
-            p1_u, p1_v, img_height, half_width, wall_height, True
-        )
-        p2_px, p2_py = _project_to_image_coords(
-            p2_u, p2_v, img_height, half_width, wall_height, True
-        )
+        p1_px, p1_py = uv_to_pixel_left(p1_u, p1_v, img_height, half_width)
+        p2_px, p2_py = uv_to_pixel_left(p2_u, p2_v, img_height, half_width)
 
         thickness = (node.radius + parent.radius) / 2
-        line_width = max(1, int(thickness * half_width / 12.5))
+        line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
 
         _draw_line(shadow_z, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
 
-        p1_u, p1_v = _project_orthographic_x_wall(parent.x, parent.y, parent.z)
-        p2_u, p2_v = _project_orthographic_x_wall(node.x, node.y, node.z)
+        p1_u, p1_v = node_to_x_wall_uv(parent.x, parent.y, parent.z, wall_height)
+        p2_u, p2_v = node_to_x_wall_uv(node.x, node.y, node.z, wall_height)
 
-        p1_px, p1_py = _project_to_image_coords(
-            p1_u, p1_v, img_height, half_width, wall_height, False
-        )
-        p2_px, p2_py = _project_to_image_coords(
-            p2_u, p2_v, img_height, half_width, wall_height, False
-        )
+        p1_px, p1_py = uv_to_pixel_right(p1_u, p1_v, img_height, half_width)
+        p2_px, p2_py = uv_to_pixel_right(p2_u, p2_v, img_height, half_width)
 
         _draw_line(
             shadow_x,
-            p1_px - half_width,
+            p1_px,
             p1_py,
-            p2_px - half_width,
+            p2_px,
             p2_py,
             line_width,
             half_width,
@@ -137,7 +135,7 @@ def _draw_line(
     y2: int,
     line_width: int,
     width: int,
-    height: int = None,
+    height: int | None = None,
 ) -> None:
     if height is None:
         height = len(shadow)

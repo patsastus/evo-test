@@ -10,12 +10,16 @@ BOUNDS = {
     "maxY": 10,
 }
 
-VOXEL_RESOLUTION = 20
+CANVAS_WIDTH = 10
+
+X_MIN = -5
+X_MAX = 5
+Z_MIN = -5
+Z_MAX = 5
+Y_BASE = 0.5
 
 Z_WALL_X = -7.5
 X_WALL_Z = 7.5
-WALL_HEIGHT_BASE = 0.5
-WALL_WIDTH = 12.5
 
 
 class LightType(Enum):

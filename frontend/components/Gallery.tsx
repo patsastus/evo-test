@@ -1,7 +1,7 @@
-import React from 'react';
-import { SceneData } from '../types';
+import React, { useState } from 'react';
+import { SceneData, GenerationStats } from '../types';
 import { Scene3D } from './Scene3D';
-import { Cuboid, CheckCircle2 } from 'lucide-react';
+import { Cuboid, CheckCircle2, Layers } from 'lucide-react';
 
 interface GalleryProps {
   scenes: SceneData[];
@@ -10,6 +10,8 @@ interface GalleryProps {
   activeTab: 'generated' | 'saved';
   setActiveTab: (tab: 'generated' | 'saved') => void;
   savedScenes: SceneData[];
+  stats?: GenerationStats;
+  targetImage?: string | null;
 }
 
 export const Gallery: React.FC<GalleryProps> = ({ 
@@ -18,12 +20,47 @@ export const Gallery: React.FC<GalleryProps> = ({
   onSelect,
   activeTab,
   setActiveTab,
-  savedScenes
+  savedScenes,
+  stats,
+  targetImage,
 }) => {
   const displayScenes = activeTab === 'generated' ? scenes : savedScenes;
+  const [overlayReference, setOverlayReference] = useState(false);
+
+  const totalNodes = displayScenes.reduce((sum, scene) => sum + scene.trees.length, 0);
+  const avgNodes = displayScenes.length > 0 ? Math.round(totalNodes / displayScenes.length) : 0;
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900">
+      {/* Header with Stats */}
+      <div className="flex items-center justify-between px-6 py-3 bg-slate-800/80 border-b border-slate-700">
+        <div className="flex gap-6 text-xs font-mono text-slate-400">
+          <span>Nodes: <span className="text-slate-200">{avgNodes}</span></span>
+          {stats && (
+            <>
+              <span>Remaining: <span className="text-slate-200">{stats.remaining_attractors}</span></span>
+              <span>Total: <span className="text-slate-200">{stats.total_attractors}</span></span>
+            </>
+          )}
+        </div>
+        
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={overlayReference}
+            onChange={(e) => setOverlayReference(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-700 rounded-full peer peer-checked:bg-cyan-600 transition-colors relative">
+            <div className="absolute w-4 h-4 bg-white rounded-full top-0.5 left-0.5 peer-checked:left-[18px] transition-all shadow" />
+          </div>
+          <span className="text-xs text-slate-300 flex items-center gap-1.5">
+            <Layers size={14} />
+            Overlay Reference
+          </span>
+        </label>
+      </div>
+
       {/* Tabs */}
       <div className="flex border-b border-slate-700 bg-slate-800/50">
         <button
@@ -77,17 +114,27 @@ export const Gallery: React.FC<GalleryProps> = ({
                         </div>
                         <Scene3D data={scene} />
                     </div>
-                    {/* Shadow View (Image from Backend) */}
-                    <div className="flex-1 relative bg-white flex items-center justify-center overflow-hidden">
-                        <div className="absolute top-2 left-2 z-10 bg-black/10 px-2 py-0.5 rounded text-[10px] text-slate-600 font-bold font-mono">
+                    {/* Shadow View */}
+                    <div className="flex-1 relative bg-slate-100 flex items-center justify-center overflow-hidden">
+                        <div className="absolute top-2 left-2 z-10 bg-black/50 px-2 py-0.5 rounded text-[10px] text-slate-300 font-bold font-mono">
                             SHADOW
                         </div>
                         {scene.shadowImageUrl ? (
-                          <img 
-                            src={scene.shadowImageUrl} 
-                            alt="Projected Shadow" 
-                            className="w-full h-full object-contain p-2"
-                          />
+                          <div className="relative w-full h-full">
+                            <img 
+                              src={scene.shadowImageUrl} 
+                              alt="Projected Shadow" 
+                              className="w-full h-full object-contain p-2"
+                            />
+                            {overlayReference && targetImage && (
+                              <img
+                                src={targetImage}
+                                alt="Reference Overlay"
+                                className="absolute inset-0 w-full h-full object-contain p-2 opacity-30 mix-blend-color"
+                                style={{ mixBlendMode: 'multiply' }}
+                              />
+                            )}
+                          </div>
                         ) : (
                           <div className="text-slate-300 text-xs">No Shadow Data</div>
                         )}
@@ -101,6 +148,7 @@ export const Gallery: React.FC<GalleryProps> = ({
                           <span>GEN: {scene.generation}</span>
                           <span>Printability: {(scene.fitness.printability * 100).toFixed(0)}%</span>
                           <span>Match: {(scene.fitness.shadowMatch * 100).toFixed(0)}%</span>
+                          <span>Nodes: {scene.trees.length}</span>
                       </div>
                   </div>
                   {selectedId === scene.id && (

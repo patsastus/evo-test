@@ -1,40 +1,30 @@
-import { SceneData, GenerationParams, GeneticParams, TargetShadow } from '../types';
+import { GenerateRequest, GenerateResponse, SceneData } from '../types';
 
 const API_BASE = 'http://localhost:8000';
 
-export const generateInitialScenes = async (
-  count: number,
-  params: GenerationParams,
-  targetShadows: TargetShadow[]
-): Promise<SceneData[]> => {
+export const generateScenes = async (
+  request: GenerateRequest
+): Promise<GenerateResponse> => {
   const response = await fetch(`${API_BASE}/scenes/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ count, params, targetShadows }),
+    body: JSON.stringify(request),
   });
 
   if (!response.ok) {
     throw new Error(`Failed to generate scenes: ${response.statusText}`);
   }
 
-  return response.json();
+  const json = await response.json();
+  console.log('[DEBUG] API response stats:', json.stats);
+  console.log('[DEBUG] remaining_attractors_points:', json.stats?.remaining_attractors_points);
+  return json;
 };
 
-export const evolveScenes = async (
-  parent: SceneData,
-  params: GeneticParams
-): Promise<SceneData[]> => {
-  const response = await fetch(`${API_BASE}/scenes/evolve`, {
+export const abortGeneration = async (): Promise<void> => {
+  await fetch(`${API_BASE}/scenes/abort`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parent, params }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to evolve scenes: ${response.statusText}`);
-  }
-
-  return response.json();
 };
 
 export const exportToOBJ = async (scene: SceneData): Promise<string> => {
