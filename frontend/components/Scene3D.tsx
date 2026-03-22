@@ -61,14 +61,10 @@ const TreeRenderer: React.FC<{ trees: TreeNode[] }> = ({ trees }) => {
 
 const SceneVisualization: React.FC = () => {
   const lights = useMemo(() => {
-    const positions: THREE.Vector3[] = [];
-    for (let i = 0; i < 9; i++) {
-      const theta = (i / 8) * (Math.PI / 2);
-      const x = -5 + 15 * Math.cos(theta);
-      const z = 5 - 15 * Math.sin(theta);
-      positions.push(new THREE.Vector3(x, 0, z));
-    }
-    return positions;
+    return [
+      { position: new THREE.Vector3(10, 0, 0), label: 'Light Z' },
+      { position: new THREE.Vector3(0, 0, -10), label: 'Light X' },
+    ];
   }, []);
 
   const wallHeight = WALL_WIDTH * (153 / 256);
@@ -91,11 +87,19 @@ const SceneVisualization: React.FC = () => {
         <meshStandardMaterial color="#555555" transparent opacity={0.5} />
       </mesh>
 
-      {lights.map((pos, i) => (
-        <mesh key={i} position={pos}>
-          <sphereGeometry args={[0.3, 16, 16]} />
-          <meshStandardMaterial color="#ffff00" emissive="#ffff00" emissiveIntensity={0.5} />
-        </mesh>
+      {lights.map((light, i) => (
+        <group key={i}>
+          <mesh position={light.position}>
+            <sphereGeometry args={[0.5, 16, 16]} />
+            <meshStandardMaterial color="#ffff00" emissive="#ffff00" emissiveIntensity={0.5} />
+          </mesh>
+          {light.position.y > 0 && (
+            <mesh position={[light.position.x, light.position.y / 2, light.position.z]}>
+              <cylinderGeometry args={[0.05, 0.05, light.position.y, 8]} />
+              <meshBasicMaterial color="#ffff00" transparent opacity={0.3} />
+            </mesh>
+          )}
+        </group>
       ))}
 
       <lineSegments position={[0, 5, 0]}>

@@ -36,13 +36,16 @@ def grow_tree(
         attractors = [attractors[i] for i in indices]
 
     if len(repulsion_points) > 100:
-        rep_y_min = min(a.y for a in attractors)
-        filtered_repulsion = [r for r in repulsion_points if r.y >= rep_y_min]
-        if len(filtered_repulsion) > 100:
-            indices = np.random.choice(len(filtered_repulsion), 100, replace=False)
-            repulsion_points = [filtered_repulsion[i] for i in indices]
+        if attractors:
+            rep_y_min = min(a.y for a in attractors)
+            filtered_repulsion = [r for r in repulsion_points if r.y >= rep_y_min]
+            if len(filtered_repulsion) > 100:
+                indices = np.random.choice(len(filtered_repulsion), 100, replace=False)
+                repulsion_points = [filtered_repulsion[i] for i in indices]
+            else:
+                repulsion_points = filtered_repulsion
         else:
-            repulsion_points = filtered_repulsion
+            repulsion_points = []
 
     nodes: list[TreeNode] = []
 

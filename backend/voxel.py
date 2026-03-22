@@ -5,8 +5,61 @@ from typing import Optional
 import numpy as np
 from PIL import Image
 
-from config import BOUNDS, Z_WALL_X, X_WALL_Z, WALL_HEIGHT_BASE, WALL_WIDTH
+from config import (
+    BOUNDS,
+    LIGHT_X,
+    LIGHT_Z,
+    WALL_HEIGHT_BASE,
+    WALL_WIDTH,
+    Z_WALL_X,
+    X_WALL_Z,
+)
 from models import AttractorPoint, TargetShadow
+
+
+def _project_orthographic_z_wall(
+    voxel: np.ndarray,
+) -> tuple[float, float]:
+    vx, vy, vz = voxel
+    u = vz
+    v = vy
+    return u, v
+
+
+def _project_orthographic_x_wall(
+    voxel: np.ndarray,
+) -> tuple[float, float]:
+    vx, vy, vz = voxel
+    u = vx
+    v = vy
+    return u, v
+
+
+def _project_to_image_coords(
+    u: float,
+    v: float,
+    img_height: int,
+    half_width: int,
+    wall_height: float,
+    is_z_wall: bool,
+) -> Optional[tuple[int, int]]:
+    u_min = -5.0 if is_z_wall else -7.5
+    u_max = 7.5 if is_z_wall else 5.0
+
+    if u < u_min or u > u_max:
+        return None
+    if v < WALL_HEIGHT_BASE or v > WALL_HEIGHT_BASE + wall_height:
+        return None
+
+    px = int((u - u_min) / (u_max - u_min) * (half_width - 1))
+    if is_z_wall:
+        px = int((u - (-5)) / 12.5 * (half_width - 1))
+    else:
+        px = half_width + int((u - (-7.5)) / 12.5 * (half_width - 1))
+
+    py = int((1 - (v - WALL_HEIGHT_BASE) / wall_height) * (img_height - 1))
+
+    return px, py
 
 
 def _calculate_intersection_volume(
@@ -35,11 +88,24 @@ def _calculate_intersection_volume(
     total_voxels = len(voxel_centers)
     print(f"Total Voxels checked: {total_voxels}")
 
-    union_mask = np.zeros(len(voxel_centers), dtype=bool)
-    intersection_mask = np.ones(len(voxel_centers), dtype=bool)
-    repulsion_mask = np.zeros(len(voxel_centers), dtype=bool)
+    in_shadow_z = np.zeros(len(voxel_centers), dtype=bool)
+    in_shadow_x = np.zeros(len(voxel_centers), dtype=bool)
+    in_light_z = np.zeros(len(voxel_centers), dtype=bool)
+    in_light_x = np.zeros(len(voxel_centers), dtype=bool)
 
-    for shadow in target_shadows:
+    if len(target_shadows) >= 2:
+        shadow_z = target_shadows[0]
+        shadow_x = target_shadows[1]
+    elif len(target_shadows) == 1:
+        shadow_z = target_shadows[0]
+        shadow_x = target_shadows[0]
+    else:
+        return [], []
+
+    for shadow, in_shadow_arr, in_light_arr, is_z_wall in [
+        (shadow_z, in_shadow_z, in_light_z, True),
+        (shadow_x, in_shadow_x, in_light_x, False),
+    ]:
         image_data = shadow.imageData
         if "data:" in image_data:
             image_data = image_data.split(",")[1] if "," in image_data else image_data
@@ -53,91 +119,37 @@ def _calculate_intersection_volume(
         aspect_ratio = img_height / half_width
         wall_height = WALL_WIDTH * aspect_ratio
 
-        light_dir = np.array(
-            [shadow.lightVector.x, shadow.lightVector.y, shadow.lightVector.z]
-        )
-        light_dir = light_dir / (np.linalg.norm(light_dir) + 1e-8)
-
         shadow_mask = img_array < 128
         white_mask = img_array >= 128
-
-        voxel_in_shadow = np.zeros(len(voxel_centers), dtype=bool)
-        voxel_in_light = np.zeros(len(voxel_centers), dtype=bool)
 
         for vi, voxel in enumerate(voxel_centers):
             vx, vy, vz = voxel
 
-            t_z_wall = float("inf")
-            if abs(light_dir[0]) > 1e-8:
-                t_z_wall = (Z_WALL_X - vx) / light_dir[0]
-
-            t_x_wall = float("inf")
-            if abs(light_dir[2]) > 1e-8:
-                t_x_wall = (X_WALL_Z - vz) / light_dir[2]
-
-            if t_z_wall <= 0:
-                t_z_wall = float("inf")
-            if t_x_wall <= 0:
-                t_x_wall = float("inf")
-
-            hit_z_wall = t_z_wall < t_x_wall
-
-            if hit_z_wall and t_z_wall < float("inf"):
-                wall_y = vy + light_dir[1] * t_z_wall
-                wall_z = vz + light_dir[2] * t_z_wall
-
-                if wall_y < WALL_HEIGHT_BASE or wall_y > WALL_HEIGHT_BASE + wall_height:
-                    continue
-                if wall_z < -5 or wall_z > 7.5:
-                    continue
-
-                px = int((wall_z - (-5)) / 12.5 * (half_width - 1))
-                py = int((wall_y - WALL_HEIGHT_BASE) / wall_height * (img_height - 1))
-
-            elif t_x_wall < float("inf"):
-                wall_y = vy + light_dir[1] * t_x_wall
-                wall_x = vx + light_dir[0] * t_x_wall
-
-                if wall_y < WALL_HEIGHT_BASE or wall_y > WALL_HEIGHT_BASE + wall_height:
-                    continue
-                if wall_x < -7.5 or wall_x > 5:
-                    continue
-
-                px = half_width + int((wall_x - (-7.5)) / 12.5 * (half_width - 1))
-                py = int((wall_y - WALL_HEIGHT_BASE) / wall_height * (img_height - 1))
-
+            if is_z_wall:
+                u, v = _project_orthographic_z_wall(voxel)
             else:
+                u, v = _project_orthographic_x_wall(voxel)
+
+            coords = _project_to_image_coords(
+                u, v, img_height, half_width, wall_height, is_z_wall
+            )
+
+            if coords is None:
                 continue
 
+            px, py = coords
             px = np.clip(px, 0, img_width - 1)
             py = np.clip(py, 0, img_height - 1)
 
-            t_min = -np.inf
-            t_max = np.inf
-            valid = True
+            if shadow_mask[py, px]:
+                in_shadow_arr[vi] = True
+            elif white_mask[py, px]:
+                in_light_arr[vi] = True
 
-            for axis in range(3):
-                if abs(light_dir[axis]) < 1e-8:
-                    if voxel[axis] < bounds[axis, 0] or voxel[axis] > bounds[axis, 1]:
-                        valid = False
-                        break
-                else:
-                    t1 = (bounds[axis, 0] - voxel[axis]) / light_dir[axis]
-                    t2 = (bounds[axis, 1] - voxel[axis]) / light_dir[axis]
-                    t_min = max(t_min, min(t1, t2))
-                    t_max = min(t_max, max(t1, t2))
+    attractor_mask = in_shadow_z & in_shadow_x
+    repulsion_mask = in_light_z | in_light_x
 
-            if valid and t_min <= t_max and t_min <= 0 <= t_max:
-                if shadow_mask[py, px]:
-                    voxel_in_shadow[vi] = True
-                elif white_mask[py, px]:
-                    voxel_in_light[vi] = True
-
-        union_mask |= voxel_in_shadow
-        intersection_mask &= voxel_in_shadow
-        repulsion_mask |= voxel_in_light
-
-    attractor_indices = np.where(union_mask)[0]
+    attractor_indices = np.where(attractor_mask)[0]
     attractors = [
         AttractorPoint(
             x=float(voxel_centers[i, 0]),
@@ -157,10 +169,9 @@ def _calculate_intersection_volume(
         for i in repulsion_indices
     ]
 
-    intersection_count = np.sum(intersection_mask)
-
-    print(f"Attractors found (Union): {len(attractors)}")
-    print(f"Repulsion points found (Any White): {len(repulsion_points)}")
-    print(f"Intersection points (Perfect Overlap): {intersection_count}")
+    print(f"Attractors found (Intersection - dark on BOTH): {len(attractors)}")
+    print(f"Repulsion points (White on EITHER): {len(repulsion_points)}")
+    print(f"Shadow Z voxels: {np.sum(in_shadow_z)}")
+    print(f"Shadow X voxels: {np.sum(in_shadow_x)}")
 
     return attractors, repulsion_points
