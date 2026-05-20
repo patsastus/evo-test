@@ -10,3 +10,9 @@ __pycache__/
 
 # OS Files
 .DS_Store
+
+#Dev folders
+.antigravitycli
+.cache
+.opencodeignore
+.devcontainer

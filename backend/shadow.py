@@ -12,6 +12,8 @@ from models import TreeNode, TargetShadow
 
 def calculate_wall_height(img_height: int, img_width: int) -> float:
     half_width = img_width // 2
+    if half_width == 0:
+        half_width = 1
     half_aspect_ratio = img_height / half_width
     return CANVAS_WIDTH * half_aspect_ratio
 
