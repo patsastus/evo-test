@@ -1,6 +1,5 @@
 import base64
 import io
-from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -15,50 +14,12 @@ from config import (
     X_WALL_Z,
 )
 from models import AttractorPoint, TargetShadow
-
-
-def calculate_wall_height(img_height: int, img_width: int) -> float:
-    half_width = img_width // 2
-    if half_width == 0:
-        half_width = 1
-    half_aspect_ratio = img_height / half_width
-    return CANVAS_WIDTH * half_aspect_ratio
-
-
-def voxel_to_z_wall_uv(
-    vx: float, vy: float, vz: float, wall_height: float
-) -> tuple[float, float]:
-    u = (vz - Z_MIN) / CANVAS_WIDTH
-    v = (vy - Y_BASE) / wall_height
-    return u, v
-
-
-def voxel_to_x_wall_uv(
-    vx: float, vy: float, vz: float, wall_height: float
-) -> tuple[float, float]:
-    u = (vx - X_MIN) / CANVAS_WIDTH
-    v = (vy - Y_BASE) / wall_height
-    return u, v
-
-
-def uv_to_pixel_left(
-    u: float, v: float, img_height: int, half_width: int
-) -> tuple[int, int]:
-    px = int(u * half_width)
-    py = int((1 - v) * img_height)
-    px = max(0, min(px, half_width - 1))
-    py = max(0, min(py, img_height - 1))
-    return px, py
-
-
-def uv_to_pixel_right(
-    u: float, v: float, img_height: int, half_width: int
-) -> tuple[int, int]:
-    px = int(u * half_width)
-    py = int((1 - v) * img_height)
-    px = max(0, min(px, half_width - 1))
-    py = max(0, min(py, img_height - 1))
-    return px, py
+from projection import (
+    calculate_wall_height,
+    to_x_wall_uv,
+    to_z_wall_uv,
+    uv_to_pixel,
+)
 
 
 def _calculate_intersection_volume(
@@ -136,11 +97,11 @@ def _calculate_intersection_volume(
         if vy < Y_BASE or vy > Y_BASE + wall_height:
             continue
 
-        u_z, v_z = voxel_to_z_wall_uv(vx, vy, vz, wall_height)
-        px_z, py_z = uv_to_pixel_left(u_z, v_z, img_height, half_width)
+        u_z, v_z = to_z_wall_uv(vx, vy, vz, wall_height)
+        px_z, py_z = uv_to_pixel(u_z, v_z, img_height, half_width)
 
-        u_x, v_x = voxel_to_x_wall_uv(vx, vy, vz, wall_height)
-        px_x, py_x = uv_to_pixel_right(u_x, v_x, img_height, half_width)
+        u_x, v_x = to_x_wall_uv(vx, vy, vz, wall_height)
+        px_x, py_x = uv_to_pixel(u_x, v_x, img_height, half_width)
 
         if left_shadow[py_z, px_z]:
             in_shadow_z[vi] = True

@@ -11,7 +11,6 @@ from PIL import Image
 
 from models import (
     AttractorPoint,
-    EvolveScenesRequest,
     ExportObjRequest,
     Fitness,
     GenerateScenesRequest,
@@ -19,10 +18,9 @@ from models import (
     SceneData,
     TreeGenome,
 )
-from scene import _evolve_scenes, _export_to_obj
-from sca import grow_tree
+from scene import _export_to_obj
+from sca import _generate_uuid, grow_tree
 from shadow import _generate_shadow_image, calculate_fitness
-from tree_gen import _generate_uuid
 from voxel import _calculate_intersection_volume
 
 router = APIRouter()
@@ -284,11 +282,6 @@ def generate_scenes(request: GenerateScenesRequest):
         result = executor.submit(_generate).result()
         print("[DEBUG] ThreadPoolExecutor completed")
         return result
-
-
-@router.post("/scenes/evolve", response_model=list[SceneData])
-def evolve_scenes(request: EvolveScenesRequest):
-    return _evolve_scenes(request.parent, request.params)
 
 
 @router.post("/export/obj")

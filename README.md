@@ -32,7 +32,7 @@ graph TD
 - **Attractor Generation**: A 3D grid voxel search identifies locations where *both* light paths overlap with dark pixels in the target shadow. These intersections become the **Attractor Points** that draw the tree branches.
 - **Repulsion Generation**: Locations that map to light (white) pixels on either shadow are designated as **Repulsion Points**. They help prevent branches from growing into areas that would create shadow false positives.
 
-### 2. Space Colonization Algorithm ([sca.py](file:///home/nraatika/projects/evo/backend/sca.py) & [tree_gen.py](file:///home/nraatika/projects/evo/backend/tree_gen.py))
+### 2. Space Colonization Algorithm ([sca.py](file:///home/nraatika/projects/evo/backend/sca.py))
 - **Branch Growth**: Branch nodes grow iteratively toward the nearest attractor points within their `influence_radius` using a normalized vector direction.
 - **Repulsion Force**: Nearby repulsion points push growth away to maintain crisp shadow silhouettes.
 - **Wiggle Factor**: Adds controlled randomness to growth directions, preventing overly straight, unnatural branches.
@@ -78,13 +78,13 @@ evo/
 │   ├── config.py            # Bounds, wall offsets, and light configs
 │   ├── models.py            # Pydantic schemas & Genome definition
 │   ├── sca.py               # Main Space Colonization growth logic
-│   ├── scene.py             # Evolve routes and Wavefront OBJ exporter
+│   ├── scene.py             # Wavefront OBJ exporter
 │   ├── shadow.py            # Shadow projecting, drawing, and fitness scoring
-│   ├── tree_gen.py          # Procedural baseline tree generation
+│   ├── projection.py        # Shared wall-projection (UV/pixel) helpers
 │   ├── voxel.py             # Voxel intersection and attractor volume resolver
 │   ├── pyproject.toml       # Backend dependencies configuration
 │   └── routers/             # API Endpoints
-│       └── scenes.py        # /scenes/generate, /scenes/evolve, /export/obj
+│       └── scenes.py        # /scenes/generate, /scenes/abort, /export/obj
 │
 ├── frontend/                # React Vite Frontend
 │   ├── App.tsx              # Main UI controller & generation state machine

@@ -1,70 +1,28 @@
 import base64
 import io
 from io import BytesIO
-from typing import Optional
 
 import numpy as np
 from PIL import Image
 
-from config import CANVAS_WIDTH, X_MIN, Z_MIN, Y_BASE
+from config import CANVAS_WIDTH
 from models import TreeNode, TargetShadow
+from projection import (
+    calculate_wall_height,
+    to_x_wall_uv,
+    to_z_wall_uv,
+    uv_to_pixel,
+)
 
 
-def calculate_wall_height(img_height: int, img_width: int) -> float:
+def _rasterize_shadows(
+    trees: list[TreeNode], img_width: int, img_height: int
+) -> tuple[list[list[float]], list[list[float]]]:
+    """Draw the tree onto the two half-width shadow grids (Z wall, X wall)."""
     half_width = img_width // 2
-    if half_width == 0:
-        half_width = 1
-    half_aspect_ratio = img_height / half_width
-    return CANVAS_WIDTH * half_aspect_ratio
-
-
-def node_to_z_wall_uv(
-    wx: float, wy: float, wz: float, wall_height: float
-) -> tuple[float, float]:
-    u = (wz - Z_MIN) / CANVAS_WIDTH
-    v = (wy - Y_BASE) / wall_height
-    return u, v
-
-
-def node_to_x_wall_uv(
-    wx: float, wy: float, wz: float, wall_height: float
-) -> tuple[float, float]:
-    u = (wx - X_MIN) / CANVAS_WIDTH
-    v = (wy - Y_BASE) / wall_height
-    return u, v
-
-
-def uv_to_pixel_left(
-    u: float, v: float, img_height: int, half_width: int
-) -> tuple[int, int]:
-    px = int(u * half_width)
-    py = int((1 - v) * img_height)
-    px = max(0, min(px, half_width - 1))
-    py = max(0, min(py, img_height - 1))
-    return px, py
-
-
-def uv_to_pixel_right(
-    u: float, v: float, img_height: int, half_width: int
-) -> tuple[int, int]:
-    px = int(u * half_width)
-    py = int((1 - v) * img_height)
-    px = max(0, min(px, half_width - 1))
-    py = max(0, min(py, img_height - 1))
-    return px, py
-
-
-def _generate_shadow_image(
-    trees: list[TreeNode], reference_width: int = 512, reference_height: int = 153
-) -> str:
-    img_width = reference_width
-    img_height = reference_height
-    half_width = img_width // 2
-
     wall_height = calculate_wall_height(img_height, img_width)
 
     node_map = {n.id: n for n in trees}
-
     shadow_z = [[0.0] * half_width for _ in range(img_height)]
     shadow_x = [[0.0] * half_width for _ in range(img_height)]
 
@@ -75,32 +33,27 @@ def _generate_shadow_image(
         if not parent:
             continue
 
-        p1_u, p1_v = node_to_z_wall_uv(parent.x, parent.y, parent.z, wall_height)
-        p2_u, p2_v = node_to_z_wall_uv(node.x, node.y, node.z, wall_height)
-
-        p1_px, p1_py = uv_to_pixel_left(p1_u, p1_v, img_height, half_width)
-        p2_px, p2_py = uv_to_pixel_left(p2_u, p2_v, img_height, half_width)
-
         thickness = (node.radius + parent.radius) / 2
         line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
 
-        _draw_line(shadow_z, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
+        for grid, to_uv in ((shadow_z, to_z_wall_uv), (shadow_x, to_x_wall_uv)):
+            p1_u, p1_v = to_uv(parent.x, parent.y, parent.z, wall_height)
+            p2_u, p2_v = to_uv(node.x, node.y, node.z, wall_height)
+            p1_px, p1_py = uv_to_pixel(p1_u, p1_v, img_height, half_width)
+            p2_px, p2_py = uv_to_pixel(p2_u, p2_v, img_height, half_width)
+            _draw_line(grid, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
 
-        p1_u, p1_v = node_to_x_wall_uv(parent.x, parent.y, parent.z, wall_height)
-        p2_u, p2_v = node_to_x_wall_uv(node.x, node.y, node.z, wall_height)
+    return shadow_z, shadow_x
 
-        p1_px, p1_py = uv_to_pixel_right(p1_u, p1_v, img_height, half_width)
-        p2_px, p2_py = uv_to_pixel_right(p2_u, p2_v, img_height, half_width)
 
-        _draw_line(
-            shadow_x,
-            p1_px,
-            p1_py,
-            p2_px,
-            p2_py,
-            line_width,
-            half_width,
-        )
+def _generate_shadow_image(
+    trees: list[TreeNode], reference_width: int = 512, reference_height: int = 153
+) -> str:
+    img_width = reference_width
+    img_height = reference_height
+    half_width = img_width // 2
+
+    shadow_z, shadow_x = _rasterize_shadows(trees, img_width, img_height)
 
     buffer = BytesIO()
     img = Image.new("RGB", (img_width, img_height), "white")
@@ -183,35 +136,7 @@ def _decode_image(image_data: str) -> np.ndarray:
 def _get_shadow_arrays(
     trees: list[TreeNode], reference_width: int, reference_height: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    img_width = reference_width
-    img_height = reference_height
-    half_width = img_width // 2
-    wall_height = calculate_wall_height(img_height, img_width)
-
-    node_map = {n.id: n for n in trees}
-    shadow_z = [[0.0] * half_width for _ in range(img_height)]
-    shadow_x = [[0.0] * half_width for _ in range(img_height)]
-
-    for node in trees:
-        if not node.parentId:
-            continue
-        parent = node_map.get(node.parentId)
-        if not parent:
-            continue
-
-        p1_u, p1_v = node_to_z_wall_uv(parent.x, parent.y, parent.z, wall_height)
-        p2_u, p2_v = node_to_z_wall_uv(node.x, node.y, node.z, wall_height)
-        p1_px, p1_py = uv_to_pixel_left(p1_u, p1_v, img_height, half_width)
-        p2_px, p2_py = uv_to_pixel_left(p2_u, p2_v, img_height, half_width)
-        thickness = (node.radius + parent.radius) / 2
-        line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
-        _draw_line(shadow_z, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
-
-        p1_u, p1_v = node_to_x_wall_uv(parent.x, parent.y, parent.z, wall_height)
-        p2_u, p2_v = node_to_x_wall_uv(node.x, node.y, node.z, wall_height)
-        p1_px, p1_py = uv_to_pixel_right(p1_u, p1_v, img_height, half_width)
-        p2_px, p2_py = uv_to_pixel_right(p2_u, p2_v, img_height, half_width)
-        _draw_line(shadow_x, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
+    shadow_z, shadow_x = _rasterize_shadows(trees, reference_width, reference_height)
 
     arr_z = np.array(shadow_z) > 0.5
     arr_x = np.array(shadow_x) > 0.5

@@ -115,11 +115,6 @@ class GenerateScenesRequest(BaseModel):
     run_until_complete: bool = False
 
 
-class EvolveScenesRequest(BaseModel):
-    parent: SceneData
-    params: GeneticParams
-
-
 class ExportObjRequest(BaseModel):
     scene: SceneData
 
