@@ -70,10 +70,11 @@ class TreeGenome(BaseModel):
     def mutate(self) -> "TreeGenome":
         import random
 
-        random.seed(self.random_seed + random.randint(0, 10000))
+        # Local RNG: deterministic per genome seed, never touches the global `random` state.
+        rng = random.Random(self.random_seed)
 
         def mutate_param(value: float, mutation_range: float = 0.15) -> float:
-            change = (random.random() - 0.5) * 2 * mutation_range
+            change = (rng.random() - 0.5) * 2 * mutation_range
             new_value = value * (1 + change)
             return max(value * 0.5, min(value * 1.5, new_value))
 
@@ -81,11 +82,11 @@ class TreeGenome(BaseModel):
             change = int(value * mutation_range)
             if change < 1:
                 change = 1
-            new_value = value + random.randint(-change, change)
+            new_value = value + rng.randint(-change, change)
             return max(1, new_value)
 
         def mutate_bool(value: bool, flip_chance: float = 0.2) -> bool:
-            if random.random() < flip_chance:
+            if rng.random() < flip_chance:
                 return not value
             return value
 
@@ -98,7 +99,7 @@ class TreeGenome(BaseModel):
             repulsion_radius=mutate_param(self.repulsion_radius, 0.15),
             max_children_per_node=mutate_int(self.max_children_per_node, 0.15),
             wiggle_factor=mutate_param(self.wiggle_factor, 0.20),
-            random_seed=random.randint(0, 1000000),
+            random_seed=rng.randint(0, 1000000),
         )
 
 

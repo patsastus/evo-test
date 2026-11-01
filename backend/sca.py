@@ -7,6 +7,9 @@ import numpy as np
 from models import AttractorPoint, GenerationStats, TreeGenome, TreeNode
 
 
+MAX_WORKING_ATTRACTORS = 400
+
+
 def _generate_uuid() -> str:
     return uuid.uuid4().hex[:9]
 
@@ -27,13 +30,7 @@ def grow_tree(
 
     np.random.seed(genome.random_seed)
 
-    original_attractor_count = len(attractors)
-    total_attractors = original_attractor_count
-
-    if len(attractors) > 400:
-        indices = np.random.choice(len(attractors), 400, replace=False)
-        attractors = [attractors[i] for i in indices]
-        total_attractors = 400
+    total_attractors = len(attractors)
 
     if len(repulsion_points) > 100:
         if attractors:
@@ -89,18 +86,31 @@ def grow_tree(
         else np.array([]).reshape(0, 3)
     )
 
-    active_attractors = np.ones(len(attractor_positions), dtype=bool)
+    # `alive` tracks every attractor; only a bounded working set (MAX_WORKING_ATTRACTORS)
+    # is used per iteration to keep the distance matrix small. The working set is
+    # topped up from the not-yet-used pool as attractors are killed, so no point is
+    # silently discarded.
+    alive = np.ones(len(attractor_positions), dtype=bool)
+    pool = list(np.random.permutation(len(attractor_positions)))
+    work_idx = np.array([], dtype=int)
 
     new_nodes_added = 0
     growth_stopped_reason = "max_nodes"
     initial_node_count = len(nodes)
 
     while new_nodes_added < max_new_nodes:
-        if not active_attractors.any():
+        work_idx = work_idx[alive[work_idx]]
+        if len(work_idx) < MAX_WORKING_ATTRACTORS and pool:
+            take = MAX_WORKING_ATTRACTORS - len(work_idx)
+            work_idx = np.concatenate([work_idx, np.array(pool[:take], dtype=int)])
+            pool = pool[take:]
+            work_idx = work_idx[alive[work_idx]]
+
+        if len(work_idx) == 0:
             growth_stopped_reason = "attractors_exhausted"
             break
 
-        active_positions = attractor_positions[active_attractors]
+        active_positions = attractor_positions[work_idx]
         node_positions = np.array([[n.x, n.y, n.z] for n in nodes])
 
         all_distances = np.linalg.norm(
@@ -150,11 +160,26 @@ def grow_tree(
                 nearby_repulsors = repulsion_positions[nearby_mask]
 
                 if len(nearby_repulsors) > 0:
-                    for rep_pos in nearby_repulsors:
-                        diff = rep_pos - node_pos
-                        dist = np.linalg.norm(diff)
-                        if dist > 0.1:
-                            repulsion_vector += diff / (dist * dist)
+                    # Push AWAY from nearby repulsors, weighted by proximity (0..1).
+                    away = node_pos - nearby_repulsors
+                    dists = np.linalg.norm(away, axis=1)
+                    valid = dists > 1e-6
+                    if valid.any():
+                        weights = 1.0 - dists[valid] / genome.repulsion_radius
+                        repulsion_vector = np.sum(
+                            (away[valid] / dists[valid, np.newaxis])
+                            * weights[:, np.newaxis],
+                            axis=0,
+                        )
+                        # Bound magnitude to 1 so strengths act as relative weights.
+                        rep_norm = np.linalg.norm(repulsion_vector)
+                        if rep_norm > 1.0:
+                            repulsion_vector /= rep_norm
+
+            # Normalise attraction so attraction/repulsion strengths are comparable.
+            att_norm = np.linalg.norm(attraction_vector)
+            if att_norm > 1e-8:
+                attraction_vector = attraction_vector / att_norm
 
             final_vector = (attraction_vector * genome.attraction_strength) + (
                 repulsion_vector * genome.repulsion_strength
@@ -190,11 +215,12 @@ def grow_tree(
 
         node_positions = np.array([[n.x, n.y, n.z] for n in nodes])
         distances = np.linalg.norm(
-            attractor_positions[:, np.newaxis] - node_positions[np.newaxis, :, :],
+            attractor_positions[work_idx][:, np.newaxis]
+            - node_positions[np.newaxis, :, :],
             axis=2,
         )
         min_dist_to_nodes = np.min(distances, axis=1)
-        active_attractors = min_dist_to_nodes >= genome.kill_distance
+        alive[work_idx[min_dist_to_nodes < genome.kill_distance]] = False
 
     node_map: dict[str, TreeNode] = {n.id: n for n in nodes}
     children_map: dict[str, list[TreeNode]] = {}
@@ -232,7 +258,7 @@ def grow_tree(
         if not updated:
             break
 
-    remaining_indices = np.where(active_attractors)[0]
+    remaining_indices = np.where(alive)[0]
     remaining_attractor_points = [
         AttractorPoint(
             x=float(attractor_positions[i, 0]),

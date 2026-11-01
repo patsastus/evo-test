@@ -152,12 +152,15 @@ def generate_scenes(request: GenerateScenesRequest):
                         )
                         break
 
-                    mutated_genome = current_genome.mutate()
+                    # Same genome throughout; only the RNG seed varies per iteration.
+                    iteration_genome = current_genome.model_copy(
+                        update={"random_seed": current_genome.random_seed + loop_iteration}
+                    )
                     result = grow_tree(
                         current_attractors,
                         request.params.treeCount,
                         repulsion_points,
-                        genome=mutated_genome,
+                        genome=iteration_genome,
                         existing_nodes=all_nodes if all_nodes else None,
                         max_new_nodes=request.max_new_nodes,
                     )
@@ -213,25 +216,14 @@ def generate_scenes(request: GenerateScenesRequest):
                     )
                 )
             else:
-                if existing_nodes:
-                    mutated_genome = current_genome.mutate()
-                    result = grow_tree(
-                        current_attractors,
-                        request.params.treeCount,
-                        repulsion_points,
-                        genome=mutated_genome,
-                        existing_nodes=existing_nodes,
-                        max_new_nodes=request.max_new_nodes,
-                    )
-                else:
-                    result = grow_tree(
-                        current_attractors,
-                        request.params.treeCount,
-                        repulsion_points,
-                        genome=current_genome,
-                        existing_nodes=None,
-                        max_new_nodes=request.max_new_nodes,
-                    )
+                result = grow_tree(
+                    current_attractors,
+                    request.params.treeCount,
+                    repulsion_points,
+                    genome=current_genome,
+                    existing_nodes=existing_nodes,
+                    max_new_nodes=request.max_new_nodes,
+                )
 
                 trees, stats, remaining = result
                 overall_stats = GenerationStats(
