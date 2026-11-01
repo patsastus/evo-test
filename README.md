@@ -41,7 +41,7 @@ graph TD
 
 ### 3. Shadow Generation & Fitness Scoring ([shadow.py](backend/shadow.py))
 - **Projections**: Projects tree branches back onto simulated planes to generate the predicted shadow maps.
-- **Shadow Match (Fitness)**: Computes coverage (how much of the target shadow is matched) penalized by false positives (branches casting shadows in designated "light" regions).
+- **Shadow Match (Fitness)**: Compares what a viewer would *perceive* rather than raw pixels. The rendered shadow and the target are both Gaussian-blurred and thresholded (`PERCEIVED_SIGMA_FRAC`, `PERCEIVED_THRESHOLD` in `config.py`), so dense thin branches read as a filled region. Each light is scored by IoU of the two perceived masks, and the lights are combined with a harmonic mean so the weaker shadow dominates. The foot's shadow is deliberately ignored.
 - **Printability** ([printability.py](backend/printability.py)): scored from the branch graph at 100 mm scale for a chosen nozzle (`0.4` default, or `0.2`). Score = thickness × overhang: branches thinner than the nozzle can print are penalised, as are branches inclined under 45° from horizontal (they need support). A root outside the standard foot scores 0. Thresholds are rules of thumb pending test prints. `POST /scenes/printability` returns the full report including checks on the built solid.
 
 

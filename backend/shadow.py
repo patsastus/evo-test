@@ -1,11 +1,12 @@
 import base64
 import io
+from functools import lru_cache
 from io import BytesIO
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
-from config import CANVAS_WIDTH
+from config import CANVAS_WIDTH, PERCEIVED_SIGMA_FRAC, PERCEIVED_THRESHOLD
 from models import TreeNode, TargetShadow
 from printability import score as printability_score
 from projection import (
@@ -144,6 +145,64 @@ def _get_shadow_arrays(
     return arr_z, arr_x
 
 
+def _perceived_mask(mask: np.ndarray, sigma: float, threshold: float) -> np.ndarray:
+    """What a viewer sees from afar: blur the shadow and keep pixels whose local
+    darkness density reaches `threshold`. Thin, dense branches then read as a
+    filled region, like the (filled) target silhouettes."""
+    img = Image.fromarray((mask.astype(np.uint8) * 255), "L")
+    blurred = np.asarray(img.filter(ImageFilter.GaussianBlur(sigma)))
+    return blurred >= threshold * 255
+
+
+@lru_cache(maxsize=16)
+def _target_perceived_masks(image_data: str) -> tuple[np.ndarray, np.ndarray]:
+    """Perceived (left, right) masks of a target image; cached across candidates."""
+    arr = _decode_image(image_data)
+    height, width = arr.shape
+    half = width // 2
+    sigma = PERCEIVED_SIGMA_FRAC * half
+    dark = arr < 128
+    left = _perceived_mask(dark[:, :half], sigma, PERCEIVED_THRESHOLD)
+    right = _perceived_mask(dark[:, width - half :], sigma, PERCEIVED_THRESHOLD)
+    left.setflags(write=False)
+    right.setflags(write=False)
+    return left, right
+
+
+def _iou(a: np.ndarray, b: np.ndarray) -> float:
+    union = np.logical_or(a, b).sum()
+    if union == 0:
+        return 0.0
+    return float(np.logical_and(a, b).sum() / union)
+
+
+def shadow_match_per_light(
+    trees: list[TreeNode], target_shadows: list[TargetShadow]
+) -> list[float]:
+    """IoU of the perceived rendered shadow vs the perceived target, per light.
+
+    Light index 0 is compared with the left half of its image, index 1 with the
+    right half (see ISSUES: lightVector is not interpreted yet).
+    """
+    scores = []
+    for i, target in enumerate(target_shadows):
+        left, right = _target_perceived_masks(target.imageData)
+        target_mask = left if i == 0 else right
+        height, half = target_mask.shape
+        gen_z, gen_x = _get_shadow_arrays(trees, half * 2, height)
+        gen = gen_z if i == 0 else gen_x
+        sigma = PERCEIVED_SIGMA_FRAC * half
+        scores.append(_iou(_perceived_mask(gen, sigma, PERCEIVED_THRESHOLD), target_mask))
+    return scores
+
+
+def combine_lights(scores: list[float]) -> float:
+    """Harmonic mean: every shadow has to work, a bad one drags the total down."""
+    if not scores or min(scores) <= 0:
+        return 0.0
+    return float(len(scores) / sum(1.0 / s for s in scores))
+
+
 def calculate_fitness(
     trees: list[TreeNode],
     target_shadows: list[TargetShadow],
@@ -154,44 +213,6 @@ def calculate_fitness(
     if not target_shadows or not trees:
         return 0.0, 0.0
 
-    shadow_match_scores = []
-
-    for i, target in enumerate(target_shadows):
-        target_arr = _decode_image(target.imageData)
-        target_height, target_width = target_arr.shape
-
-        gen_z, gen_x = _get_shadow_arrays(trees, target_width, target_height)
-
-        gen_arr = gen_z if i == 0 else gen_x
-        target_arr_use = (
-            target_arr[:, : gen_arr.shape[1]]
-            if i == 0
-            else target_arr[:, target_width - gen_arr.shape[1] :]
-        )
-
-        target_dark = target_arr_use < 128
-        target_white = target_arr_use >= 128
-
-        target_pixels = target_dark.sum()
-        if target_pixels == 0:
-            shadow_match_scores.append(0.0)
-            continue
-
-        covered = (gen_arr & target_dark).sum()
-        false_positives = (gen_arr & target_white).sum()
-        total_gen = gen_arr.sum()
-        if total_gen == 0:
-            shadow_match_scores.append(0.0)
-            continue
-
-        coverage = covered / target_pixels
-        false_positive_rate = false_positives / total_gen if total_gen > 0 else 0
-        penalty = false_positive_rate * 0.3
-        score = max(0.0, min(1.0, coverage - penalty))
-        shadow_match_scores.append(score)
-
-    shadow_match = float(np.mean(shadow_match_scores)) if shadow_match_scores else 0.0
-
+    shadow_match = combine_lights(shadow_match_per_light(trees, target_shadows))
     printability = printability_score(trees, nozzle)
-
     return shadow_match, printability

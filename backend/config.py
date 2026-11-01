@@ -61,3 +61,9 @@ MAX_RUN_SECONDS = 60  # wall-clock budget per generate request (checked between 
 # Print-space scale: 1 scene unit (the scene box is 10 units wide) == 10 mm,
 # i.e. the 10-unit-wide scene is 100 mm.
 MM_PER_UNIT = 10.0
+
+# Shadow-match: "perceived" shadow = Gaussian blur (sigma as a fraction of one
+# shadow's width) thresholded at this local darkness density. Chosen from a
+# calibration sweep on tests/images (stable across 1-3% / 0.1-0.3).
+PERCEIVED_SIGMA_FRAC = 0.02
+PERCEIVED_THRESHOLD = 0.2
