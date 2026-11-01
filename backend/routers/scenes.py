@@ -26,6 +26,7 @@ from models import (
     TreeNode,
 )
 from mesh import build_scene_mesh, mesh_report
+from printability import analyze as analyze_printability
 from scene import _export_to_obj
 from sca import _generate_uuid, grow_tree
 from shadow import _generate_shadow_image, calculate_fitness
@@ -98,7 +99,7 @@ def _make_scene(
 ) -> SceneData:
     shadow_url = _generate_shadow_image(trees, ref_width, ref_height)
     shadow_match, printability = calculate_fitness(
-        trees, request.targetShadows, ref_width, ref_height
+        trees, request.targetShadows, ref_width, ref_height, request.nozzle
     )
     return SceneData(
         id=_generate_uuid(),
@@ -321,3 +322,13 @@ def export_mesh(request: ExportObjRequest, format: Literal["stl", "obj"] = "stl"
             "X-Mesh-Watertight": str(mesh_report(mesh)["watertight"]).lower(),
         },
     )
+
+
+@router.post("/scenes/printability")
+def scene_printability(request: ExportObjRequest, nozzle: Literal["0.4", "0.2"] = "0.4"):
+    """Full printability report: skeleton metrics plus checks on the built solid."""
+    report = analyze_printability(request.scene.trees, nozzle)
+    out = {"printability": report.to_dict(), "mesh": None}
+    if report.gate_ok:
+        out["mesh"] = mesh_report(build_scene_mesh(request.scene.trees))
+    return out

@@ -154,3 +154,8 @@ def test_duplicate_inflight_request_id_conflicts(black, monkeypatch):
 def test_active_registry_is_cleaned_up(black):
     client.post("/scenes/generate", json=body(black, request_id="cleanup"))
     assert "cleanup" not in scenes_router._active_requests
+
+
+def test_generate_accepts_nozzle_and_rejects_unknown(black):
+    assert client.post("/scenes/generate", json=body(black, nozzle="0.2")).status_code == 200
+    assert client.post("/scenes/generate", json=body(black, nozzle="0.6")).status_code == 422

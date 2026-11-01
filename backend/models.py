@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -123,6 +123,7 @@ class GenerateScenesRequest(BaseModel):
     )
     max_new_nodes: int = Field(default=500, ge=1, le=MAX_NEW_NODES)
     run_until_complete: bool = False
+    nozzle: Literal["0.4", "0.2"] = "0.4"  # printability thresholds
     # Optional client-chosen id so /scenes/abort can target just this request.
     request_id: Optional[str] = Field(default=None, max_length=64)
 

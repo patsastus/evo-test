@@ -7,6 +7,7 @@ from PIL import Image
 
 from config import CANVAS_WIDTH
 from models import TreeNode, TargetShadow
+from printability import score as printability_score
 from projection import (
     calculate_wall_height,
     to_x_wall_uv,
@@ -148,6 +149,7 @@ def calculate_fitness(
     target_shadows: list[TargetShadow],
     reference_width: int = 512,
     reference_height: int = 153,
+    nozzle: str = "0.4",
 ) -> tuple[float, float]:
     if not target_shadows or not trees:
         return 0.0, 0.0
@@ -190,25 +192,6 @@ def calculate_fitness(
 
     shadow_match = float(np.mean(shadow_match_scores)) if shadow_match_scores else 0.0
 
-    printability = calculate_printability(trees)
+    printability = printability_score(trees, nozzle)
 
     return shadow_match, printability
-
-
-def calculate_printability(trees: list[TreeNode]) -> float:
-    if not trees:
-        return 0.0
-
-    grounded_nodes = sum(1 for n in trees if n.y <= 0.6 and n.parentId is not None)
-
-    if grounded_nodes == 0:
-        return 0.0
-
-    max_y = max(n.y for n in trees) if trees else 0
-    aspect_ratio = max_y / 5.0 if max_y > 0 else 0
-
-    base_score = grounded_nodes / len(trees) if trees else 0
-    aspect_penalty = max(0, 1 - aspect_ratio / 2) * 0.3
-
-    score = base_score - aspect_penalty
-    return max(0.0, min(1.0, score))

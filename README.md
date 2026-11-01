@@ -42,7 +42,7 @@ graph TD
 ### 3. Shadow Generation & Fitness Scoring ([shadow.py](backend/shadow.py))
 - **Projections**: Projects tree branches back onto simulated planes to generate the predicted shadow maps.
 - **Shadow Match (Fitness)**: Computes coverage (how much of the target shadow is matched) penalized by false positives (branches casting shadows in designated "light" regions).
-- **Printability**: A rough heuristic based on the proportion of nodes near the ground and tree height. It is known to be crude and currently scores near 0 for most trees.
+- **Printability** ([printability.py](backend/printability.py)): scored from the branch graph at 100 mm scale for a chosen nozzle (`0.4` default, or `0.2`). Score = thickness × overhang: branches thinner than the nozzle can print are penalised, as are branches inclined under 45° from horizontal (they need support). A root outside the standard foot scores 0. Thresholds are rules of thumb pending test prints. `POST /scenes/printability` returns the full report including checks on the built solid.
 
 
 ---
@@ -81,6 +81,9 @@ evo/
 │   ├── sca.py               # Main Space Colonization growth logic
 │   ├── scene.py             # Wavefront OBJ exporter
 │   ├── shadow.py            # Shadow projecting, drawing, and fitness scoring
+│   ├── printability.py      # Printability scoring (nozzle profiles, thickness, overhang)
+│   ├── mesh.py              # Tree -> watertight solid with standard foot
+│   ├── connector.py         # Shared foot/peg spec (keyed sockets, clearance)
 │   ├── projection.py        # Shared wall-projection (UV/pixel) helpers
 │   ├── voxel.py             # Voxel intersection and attractor volume resolver
 │   ├── pyproject.toml       # Backend dependencies configuration
@@ -146,6 +149,7 @@ uv run pytest
 | `POST /scenes/generate` | Grow candidate trees from target shadows; supports continuing from `parent_nodes` + `remaining_attractors`, and `run_until_complete`. |
 | `POST /scenes/abort[?request_id=…]` | Abort one in-flight generation by id, or all if no id is given. |
 | `POST /export/obj` | Export the tree skeleton (vertices + line elements, no solid geometry). |
+| `POST /scenes/printability[?nozzle=0.4\|0.2]` | Full printability report for a scene, plus watertight/volume checks on the built mesh. |
 | `POST /export/mesh?format=stl\|obj` | Export a printable, watertight solid at 100 mm scale: tubes along the branches fused with a standard foot that has keyed sockets (see `backend/connector.py`). |
 
 Requests are bounded (see `backend/config.py`: candidates ≤ 16, tree count ≤ 10, `max_new_nodes` ≤ 5000, ≤ 20,000 nodes per tree, images ≤ 5 MB / 4096 px, 60 s wall-clock budget). Invalid input returns 4xx.

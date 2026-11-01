@@ -4,7 +4,7 @@ import io
 from PIL import Image
 
 from models import TreeNode
-from shadow import _generate_shadow_image, calculate_fitness, calculate_printability
+from shadow import _generate_shadow_image, calculate_fitness
 
 from conftest import make_targets, solid_image, to_data_url
 
@@ -63,7 +63,3 @@ def test_fitness_white_target_scores_zero_match():
     targets = make_targets(to_data_url(solid_image(200, 60, 255)))
     match, _ = calculate_fitness(trunk(), targets, 200, 60)
     assert match == 0.0
-
-
-def test_printability_empty_is_zero():
-    assert calculate_printability([]) == 0.0
