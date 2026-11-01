@@ -40,6 +40,8 @@ NOZZLE_PROFILES: dict[str, NozzleProfile] = {
 # Surfaces tilted less than this from horizontal need support. Penalty ramps from
 # 0 at the limit to 1 for a horizontal branch.
 OVERHANG_LIMIT_DEG = 45.0
+# Tolerance so a branch exactly at the limit (up to float error) is not counted.
+OVERHANG_TOL_DEG = 1e-6
 
 
 @dataclass
@@ -157,7 +159,7 @@ def analyze(
         unprintable_length_fraction=float(
             length[diameter <= profile.fail_diameter].sum() / total
         ),
-        overhang_length_fraction=float(length[elevation < OVERHANG_LIMIT_DEG].sum() / total),
+        overhang_length_fraction=float(length[elevation < OVERHANG_LIMIT_DEG - OVERHANG_TOL_DEG].sum() / total),
         total_branch_length_mm=total,
         com_offset_mm=float(np.hypot(com[0], com[1])),
         com_height_mm=float(com[2]),

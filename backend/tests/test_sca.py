@@ -113,3 +113,39 @@ def test_ct_growth_reaches_top_of_volume(ct_volume):
     nodes, stats, _ = grow_tree(att, 1, rep, genome=TreeGenome(), max_new_nodes=300)
     assert stats.total_attractors == len(att)
     assert max(n.y for n in nodes) > 5.5  # regression: used to stall near y=3.2
+
+
+def positions(nodes):
+    return [(n.x, n.y, n.z) for n in nodes]
+
+
+def test_direction_filter_none_and_identity_are_equivalent():
+    pts = line_of_attractors()
+    g = TreeGenome(random_seed=3)
+    base, _, _ = grow_tree(pts, genome=g, max_new_nodes=20)
+    ident, _, _ = grow_tree(pts, genome=g, max_new_nodes=20, direction_filter=lambda pos, d: d)
+    assert positions(base) == positions(ident)
+
+
+def test_direction_filter_is_called_per_segment_and_controls_growth():
+    calls = []
+
+    def straight_up(pos, d):
+        calls.append((pos.copy(), d.copy()))
+        return np.array([0.0, 1.0, 0.0])
+
+    pts = [AttractorPoint(x=3, y=3, z=3)]  # pulls sideways; filter overrides
+    nodes, stats, _ = grow_tree(
+        pts, genome=TreeGenome(wiggle_factor=0.0), max_new_nodes=5, direction_filter=straight_up
+    )
+    assert len(calls) == stats.nodes_grown == 5
+    assert all(np.isclose(np.linalg.norm(d), 1.0) for _, d in calls)
+    assert all(n.x == 0.0 and n.z == 0.0 for n in nodes)  # only grew upward
+
+
+def test_direction_filter_returning_zero_vector_is_ignored():
+    pts = line_of_attractors()
+    g = TreeGenome(random_seed=4)
+    base, _, _ = grow_tree(pts, genome=g, max_new_nodes=10)
+    zero, _, _ = grow_tree(pts, genome=g, max_new_nodes=10, direction_filter=lambda p, d: np.zeros(3))
+    assert positions(base) == positions(zero)

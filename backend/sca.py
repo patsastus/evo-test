@@ -1,6 +1,6 @@
 import math
 import uuid
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -8,6 +8,9 @@ from models import AttractorPoint, GenerationStats, TreeGenome, TreeNode
 
 
 MAX_WORKING_ATTRACTORS = 400
+
+# (parent position, unit direction) -> unit direction, in scene coordinates.
+DirectionFilter = Callable[[np.ndarray, np.ndarray], np.ndarray]
 
 
 def _generate_uuid() -> str:
@@ -21,7 +24,15 @@ def grow_tree(
     genome: Optional[TreeGenome] = None,
     existing_nodes: Optional[list[TreeNode]] = None,
     max_new_nodes: int = 500,
+    direction_filter: Optional[DirectionFilter] = None,
 ) -> tuple[list[TreeNode], GenerationStats, list[AttractorPoint]]:
+    """Grow a tree with space colonization.
+
+    direction_filter: optional hook called for every new branch segment with
+    (parent position, unit growth direction) in scene coordinates (y is up). It
+    returns the (unit) direction to actually use. This is where growth policies
+    such as printability bias plug in; None leaves growth unchanged.
+    """
     if repulsion_points is None:
         repulsion_points = []
 
@@ -193,6 +204,12 @@ def grow_tree(
                 wiggle = np.random.randn(3) * genome.wiggle_factor
                 final_vector = final_vector + wiggle
                 final_vector = final_vector / np.linalg.norm(final_vector)
+
+            if direction_filter is not None:
+                filtered = np.asarray(direction_filter(node_pos, final_vector), dtype=float)
+                f_norm = np.linalg.norm(filtered)
+                if f_norm > 1e-8:
+                    final_vector = filtered / f_norm
 
             new_pos = node_pos + final_vector * genome.growth_step
 

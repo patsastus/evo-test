@@ -32,7 +32,9 @@ def test_horizontal_branch_is_a_full_overhang():
 
 
 def test_forty_five_degrees_is_the_support_free_limit():
-    assert analyze(branch(dx=1.0, dy=1.0)).overhang_score == pytest.approx(1.0)
+    rep = analyze(branch(dx=1.0, dy=1.0))
+    assert rep.overhang_score == pytest.approx(1.0)
+    assert rep.overhang_length_fraction == 0.0  # float error at exactly 45 deg must not count
 
 
 def test_overhang_penalty_is_linear_between_horizontal_and_limit():
