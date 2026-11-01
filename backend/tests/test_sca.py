@@ -124,7 +124,9 @@ def test_direction_filter_none_and_identity_are_equivalent():
     g = TreeGenome(random_seed=3)
     base, _, _ = grow_tree(pts, genome=g, max_new_nodes=20)
     ident, _, _ = grow_tree(pts, genome=g, max_new_nodes=20, direction_filter=lambda pos, d: d)
-    assert positions(base) == positions(ident)
+    # identity re-normalises an already-unit vector, so allow last-digit float noise
+    assert len(base) == len(ident)
+    assert np.allclose(positions(base), positions(ident), atol=1e-12)
 
 
 def test_direction_filter_is_called_per_segment_and_controls_growth():
