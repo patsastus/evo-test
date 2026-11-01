@@ -15,12 +15,7 @@ from config import (
     X_WALL_Z,
 )
 from models import AttractorPoint, TargetShadow
-from projection import (
-    calculate_wall_height,
-    to_x_wall_uv,
-    to_z_wall_uv,
-    uv_to_pixel,
-)
+from projection import calculate_wall_height, default_projectors, uv_to_pixels
 
 logger = logging.getLogger(__name__)
 
@@ -90,31 +85,31 @@ def _calculate_intersection_volume(
     right_shadow = shadow_mask_x[:, half_width:]
     right_white = white_mask_x[:, half_width:]
 
-    for vi, voxel in enumerate(voxel_centers):
-        vx, vy, vz = voxel
+    # Voxels outside the scene volume (or below the wall) never constrain anything.
+    in_domain = (
+        (voxel_centers[:, 0] >= X_MIN)
+        & (voxel_centers[:, 0] <= BOUNDS["maxX"])
+        & (voxel_centers[:, 2] >= Z_MIN)
+        & (voxel_centers[:, 2] <= BOUNDS["maxZ"])
+        & (voxel_centers[:, 1] >= Y_BASE)
+        & (voxel_centers[:, 1] <= Y_BASE + wall_height)
+    )
+    domain_idx = np.where(in_domain)[0]
+    domain_pts = voxel_centers[domain_idx]
 
-        if vx < X_MIN or vx > BOUNDS["maxX"]:
-            continue
-        if vz < Z_MIN or vz > BOUNDS["maxZ"]:
-            continue
-        if vy < Y_BASE or vy > Y_BASE + wall_height:
-            continue
-
-        u_z, v_z = to_z_wall_uv(vx, vy, vz, wall_height)
-        px_z, py_z = uv_to_pixel(u_z, v_z, img_height, half_width)
-
-        u_x, v_x = to_x_wall_uv(vx, vy, vz, wall_height)
-        px_x, py_x = uv_to_pixel(u_x, v_x, img_height, half_width)
-
-        if left_shadow[py_z, px_z]:
-            in_shadow_z[vi] = True
-        elif left_white[py_z, px_z]:
-            in_light_z[vi] = True
-
-        if right_shadow[py_x, px_x]:
-            in_shadow_x[vi] = True
-        elif right_white[py_x, px_x]:
-            in_light_x[vi] = True
+    # One pass per light, in light-index order: light 0 <-> left half of its image,
+    # light 1 <-> right half. The projector decides where each voxel lands on the wall.
+    projector_z, projector_x = default_projectors(img_width, img_height)
+    for projector, dark, white, in_shadow, in_light in (
+        (projector_z, left_shadow, left_white, in_shadow_z, in_light_z),
+        (projector_x, right_shadow, right_white, in_shadow_x, in_light_x),
+    ):
+        u, v = projector.project(domain_pts)
+        px, py = uv_to_pixels(u, v, img_height, half_width)
+        hit_dark = dark[py, px]
+        hit_white = white[py, px] & ~hit_dark
+        in_shadow[domain_idx[hit_dark]] = True
+        in_light[domain_idx[hit_white]] = True
 
     attractor_mask = in_shadow_z & in_shadow_x
     repulsion_mask = in_light_z | in_light_x

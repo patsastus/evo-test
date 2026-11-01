@@ -84,7 +84,7 @@ evo/
 │   ├── printability.py      # Printability scoring (nozzle profiles, thickness, overhang)
 │   ├── mesh.py              # Tree -> watertight solid with standard foot
 │   ├── connector.py         # Shared foot/peg spec (keyed sockets, clearance)
-│   ├── projection.py        # Shared wall-projection (UV/pixel) helpers
+│   ├── projection.py        # Projector seam: lights -> wall coords (parallel walls today; point lights plug in here)
 │   ├── voxel.py             # Voxel intersection and attractor volume resolver
 │   ├── pyproject.toml       # Backend dependencies configuration
 │   ├── tests/               # pytest suite (models, projection, voxel, sca, shadow, API)

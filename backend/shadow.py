@@ -9,43 +9,47 @@ from PIL import Image, ImageFilter
 from config import CANVAS_WIDTH, PERCEIVED_SIGMA_FRAC, PERCEIVED_THRESHOLD
 from models import TreeNode, TargetShadow
 from printability import score as printability_score
-from projection import (
-    calculate_wall_height,
-    to_x_wall_uv,
-    to_z_wall_uv,
-    uv_to_pixel,
-)
+from projection import default_projectors, uv_to_pixels
 
 
 def _rasterize_shadows(
     trees: list[TreeNode], img_width: int, img_height: int
-) -> tuple[list[list[float]], list[list[float]]]:
-    """Draw the tree onto the two half-width shadow grids (Z wall, X wall)."""
+) -> tuple[list[list[float]], ...]:
+    """Draw the tree onto one half-width shadow grid per light (Z wall, X wall)."""
     half_width = img_width // 2
-    wall_height = calculate_wall_height(img_height, img_width)
+    projectors = default_projectors(img_width, img_height)
 
-    node_map = {n.id: n for n in trees}
-    shadow_z = [[0.0] * half_width for _ in range(img_height)]
-    shadow_x = [[0.0] * half_width for _ in range(img_height)]
+    index = {n.id: i for i, n in enumerate(trees)}
+    segments = [
+        (index[n.parentId], i)
+        for i, n in enumerate(trees)
+        if n.parentId and n.parentId in index
+    ]
+    grids = [[[0.0] * half_width for _ in range(img_height)] for _ in projectors]
+    if not segments:
+        return tuple(grids)
 
-    for node in trees:
-        if not node.parentId:
-            continue
-        parent = node_map.get(node.parentId)
-        if not parent:
-            continue
+    points = np.array([[n.x, n.y, n.z] for n in trees])
+    radii = np.array([n.radius for n in trees])
 
-        thickness = (node.radius + parent.radius) / 2
-        line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
+    for grid, projector in zip(grids, projectors):
+        u, v = projector.project(points)
+        px, py = uv_to_pixels(u, v, img_height, half_width)
+        scale = projector.scale_at(points)
+        for parent_i, child_i in segments:
+            thickness = (radii[child_i] + radii[parent_i]) / 2 * scale[child_i]
+            line_width = max(1, int(thickness * half_width / CANVAS_WIDTH))
+            _draw_line(
+                grid,
+                int(px[parent_i]),
+                int(py[parent_i]),
+                int(px[child_i]),
+                int(py[child_i]),
+                line_width,
+                half_width,
+            )
 
-        for grid, to_uv in ((shadow_z, to_z_wall_uv), (shadow_x, to_x_wall_uv)):
-            p1_u, p1_v = to_uv(parent.x, parent.y, parent.z, wall_height)
-            p2_u, p2_v = to_uv(node.x, node.y, node.z, wall_height)
-            p1_px, p1_py = uv_to_pixel(p1_u, p1_v, img_height, half_width)
-            p2_px, p2_py = uv_to_pixel(p2_u, p2_v, img_height, half_width)
-            _draw_line(grid, p1_px, p1_py, p2_px, p2_py, line_width, half_width)
-
-    return shadow_z, shadow_x
+    return tuple(grids)
 
 
 def _generate_shadow_image(
