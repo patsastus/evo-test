@@ -108,7 +108,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             'Generating...'
           ) : hasScenes ? (
             <>
-              <Play size={18} /> Regenerate ({generationNumber})
+              <Play size={18} /> Start Over (gen {generationNumber})
             </>
           ) : (
             <>

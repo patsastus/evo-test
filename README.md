@@ -6,7 +6,7 @@
 
 ## 🗺️ System & Algorithm Flow
 
-The system combines a custom **Multi-Projection Space Colonization Algorithm (SCA)** with simulated genetic optimization to guide the growth of a 3D branch network within a bounding box, ensuring the generated sculpture matches the user's uploaded target shadow masks.
+The system uses a custom **Multi-Projection Space Colonization Algorithm (SCA)** to grow a 3D branch network inside a bounding box so that it matches the user's uploaded target shadow masks. Each request grows several candidate trees (each with a lightly mutated parameter set); you pick one and continue growing it step by step. There is no population-based genetic evolution.
 
 ```mermaid
 graph TD
@@ -19,7 +19,7 @@ graph TD
     G --> H[Calculate Fitness]
     H --> I[Shadow Match Score]
     H --> J[Printability Score]
-    I & J --> K[Evolve / Grow Next Step]
+    I & J --> K[Pick a candidate & continue growth]
     F --> L[Export Wavefront .OBJ]
 ```
 
@@ -27,21 +27,22 @@ graph TD
 
 ## 🧠 Core Algorithm Components
 
-### 1. Voxel Intersection & Attractor Clouds ([voxel.py](file:///home/nraatika/projects/evo/backend/voxel.py))
+### 1. Voxel Intersection & Attractor Clouds ([voxel.py](backend/voxel.py))
 - **Extrusion**: The target 2D shadow is extruded along the virtual light vectors (orthogonal Z and X axes) into 3D voxel rays.
 - **Attractor Generation**: A 3D grid voxel search identifies locations where *both* light paths overlap with dark pixels in the target shadow. These intersections become the **Attractor Points** that draw the tree branches.
 - **Repulsion Generation**: Locations that map to light (white) pixels on either shadow are designated as **Repulsion Points**. They help prevent branches from growing into areas that would create shadow false positives.
 
-### 2. Space Colonization Algorithm ([sca.py](file:///home/nraatika/projects/evo/backend/sca.py))
+### 2. Space Colonization Algorithm ([sca.py](backend/sca.py))
 - **Branch Growth**: Branch nodes grow iteratively toward the nearest attractor points within their `influence_radius` using a normalized vector direction.
-- **Repulsion Force**: Nearby repulsion points push growth away to maintain crisp shadow silhouettes.
+- **Repulsion Force**: Nearby repulsion points (within `repulsion_radius`) push growth away, weighted by proximity, to keep silhouettes crisp. Attraction and repulsion are both normalised, so `attraction_strength` / `repulsion_strength` act as relative weights.
+- **Attractor Cap**: Only a working set of up to 400 attractors is used per iteration for speed; the set is refilled as attractors are reached, and every unreached attractor is returned so growth can be continued.
 - **Wiggle Factor**: Adds controlled randomness to growth directions, preventing overly straight, unnatural branches.
 - **Tapering/Radius Control**: Calculates branch thicknesses dynamically by starting with leaves (thin) and accumulating radius back to the roots (thick) to ensure structural strength.
 
-### 3. Shadow Generation & Fitness Scoring ([shadow.py](file:///home/nraatika/projects/evo/backend/shadow.py))
+### 3. Shadow Generation & Fitness Scoring ([shadow.py](backend/shadow.py))
 - **Projections**: Projects tree branches back onto simulated planes to generate the predicted shadow maps.
 - **Shadow Match (Fitness)**: Computes coverage (how much of the target shadow is matched) penalized by false positives (branches casting shadows in designated "light" regions).
-- **Printability**: Measures structural support based on the proportion of nodes connected near the ground and checks height-to-width ratios.
+- **Printability**: A rough heuristic based on the proportion of nodes near the ground and tree height. It is known to be crude and currently scores near 0 for most trees.
 
 
 ---
@@ -83,6 +84,7 @@ evo/
 │   ├── projection.py        # Shared wall-projection (UV/pixel) helpers
 │   ├── voxel.py             # Voxel intersection and attractor volume resolver
 │   ├── pyproject.toml       # Backend dependencies configuration
+│   ├── tests/               # pytest suite (models, projection, voxel, sca, shadow, API)
 │   └── routers/             # API Endpoints
 │       └── scenes.py        # /scenes/generate, /scenes/abort, /export/obj
 │
@@ -90,6 +92,7 @@ evo/
 │   ├── App.tsx              # Main UI controller & generation state machine
 │   ├── index.html           # SPA entry html
 │   ├── index.tsx            # React bootstrap file
+│   ├── vite-env.d.ts        # Vite client typings (import.meta.env)
 │   ├── types.ts             # TypeScript definitions matching Python Pydantic models
 │   ├── services/
 │   │   └── api.ts           # API integration service
@@ -99,8 +102,8 @@ evo/
 │       ├── Gallery.tsx      # Carousel of generated candidates & saved sculptures
 │       └── DetailModal.tsx  # Modal for details, exporting, and further evolution
 │
-└── tests/                   # Test assets and images
-    └── images/              # Sample target shadow masks (circle-triangle.png, solids.png, etc.)
+└── tests/                   # Shared test assets
+    └── images/              # Sample target shadow masks (circle-triangle.png, solids.png, ct.png, etc.); also used by backend/tests
 ```
 
 ---
@@ -112,7 +115,7 @@ evo/
 - [uv](https://github.com/astral-sh/uv) (recommended) or Python 3.12+
 
 > [!TIP]
-> You can find sample shadow mask images to upload in [tests/images/](file:///home/nraatika/projects/evo/tests/images). For example, try uploading `circle-triangle.png` or `solids.png` to see how the algorithm builds a structure that projects those shapes!
+> You can find sample shadow mask images to upload in [tests/images/](tests/images). For example, try uploading `circle-triangle.png` or `solids.png` to see how the algorithm builds a structure that projects those shapes!
 
 
 ---
@@ -127,7 +130,24 @@ Install dependencies and start the FastAPI server:
 ```bash
 uv run uvicorn main:app --reload --host 0.0.0.0
 ```
-The backend API will run on `http://localhost:8000`.
+The backend API will run on `http://localhost:8000` (interactive docs at `/docs`).
+
+Set `LOG_LEVEL=DEBUG` for per-candidate detail (default `INFO`).
+
+Run the tests:
+```bash
+uv run pytest
+```
+
+#### API
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /scenes/generate` | Grow candidate trees from target shadows; supports continuing from `parent_nodes` + `remaining_attractors`, and `run_until_complete`. |
+| `POST /scenes/abort[?request_id=…]` | Abort one in-flight generation by id, or all if no id is given. |
+| `POST /export/obj` | Export a scene as Wavefront `.obj`. |
+
+Requests are bounded (see `backend/config.py`: candidates ≤ 16, tree count ≤ 10, `max_new_nodes` ≤ 5000, ≤ 20,000 nodes per tree, images ≤ 5 MB / 4096 px, 60 s wall-clock budget). Invalid input returns 4xx.
 
 ---
 

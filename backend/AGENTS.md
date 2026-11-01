@@ -25,6 +25,6 @@ We are generating trees in a 3D bounding box (X: [-5, 5], Z: [-5, 5], Y: [0, 10]
    - Convert the resulting node graph into the exact `TreeNode` and `SceneData` Pydantic models expected by the frontend.
 
 ## Workflow & Boundaries
-1. **Pace Yourself:** Do not implement the entire algorithm at once. We will build Phase 1 first.
-2. **Frontend Contract:** Do NOT break the existing `models.py`. The `POST /api/scenes/generate` endpoint must still return valid `SceneData`.
+1. **Pace Yourself:** All three phases are implemented (`voxel.py`, `sca.py`, `shadow.py`/`models.py`). Make incremental changes and keep `backend/tests` passing.
+2. **Frontend Contract:** Do NOT break the existing `models.py`. The `POST /scenes/generate` endpoint must still return valid `SceneData` (inside `GenerateResponse`).
 3. **Canvas to PIL:** All 2D image processing and pixel sampling must be done using `Pillow`.
