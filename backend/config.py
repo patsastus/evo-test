@@ -44,3 +44,15 @@ LIGHT_X = {
     "axis_u": "x",
     "axis_v": "y",
 }
+
+
+# Request limits (defensive caps for /scenes/generate; UI currently sends
+# count<=4, treeCount<=10, max_new_nodes<=500).
+MAX_CANDIDATES = 16
+MAX_TREE_COUNT = 10
+MAX_NEW_NODES = 5000
+MAX_TOTAL_NODES = 20000  # hard cap on tree size incl. run_until_complete loops
+MAX_ATTRACTORS = 20000  # voxel grid yields at most ~9.3k, so this is generous
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_DIM = 4096
+MAX_RUN_SECONDS = 60  # wall-clock budget per generate request (checked between growth passes)

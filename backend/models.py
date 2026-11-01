@@ -1,6 +1,14 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+from config import (
+    MAX_ATTRACTORS,
+    MAX_CANDIDATES,
+    MAX_NEW_NODES,
+    MAX_TOTAL_NODES,
+    MAX_TREE_COUNT,
+)
 
 
 class Vec3(BaseModel):
@@ -33,7 +41,7 @@ class SceneData(BaseModel):
 
 
 class GenerationParams(BaseModel):
-    treeCount: int
+    treeCount: int = Field(ge=1, le=MAX_TREE_COUNT)
     maxThickness: float
     branchingProb: float
     maxAngle: float
@@ -104,15 +112,32 @@ class TreeGenome(BaseModel):
 
 
 class GenerateScenesRequest(BaseModel):
-    count: int
+    count: int = Field(ge=1, le=MAX_CANDIDATES)
     params: GenerationParams
-    targetShadows: list[TargetShadow]
-    parent_nodes: Optional[list[TreeNode]] = None
+    targetShadows: list[TargetShadow] = Field(min_length=1, max_length=2)
+    parent_nodes: Optional[list[TreeNode]] = Field(default=None, max_length=MAX_TOTAL_NODES)
     parent_genome: Optional[TreeGenome] = None
-    parent_generation: Optional[int] = None
-    remaining_attractors: Optional[list[AttractorPoint]] = None
-    max_new_nodes: int = 500
+    parent_generation: Optional[int] = Field(default=None, ge=0)
+    remaining_attractors: Optional[list[AttractorPoint]] = Field(
+        default=None, max_length=MAX_ATTRACTORS
+    )
+    max_new_nodes: int = Field(default=500, ge=1, le=MAX_NEW_NODES)
     run_until_complete: bool = False
+    # Optional client-chosen id so /scenes/abort can target just this request.
+    request_id: Optional[str] = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def _parent_links_resolve(self) -> "GenerateScenesRequest":
+        if self.parent_nodes:
+            ids = {n.id for n in self.parent_nodes}
+            if len(ids) != len(self.parent_nodes):
+                raise ValueError("parent_nodes contains duplicate ids")
+            dangling = [
+                n.id for n in self.parent_nodes if n.parentId and n.parentId not in ids
+            ]
+            if dangling:
+                raise ValueError(f"parent_nodes has dangling parentId on: {dangling[:5]}")
+        return self
 
 
 class ExportObjRequest(BaseModel):
@@ -126,3 +151,8 @@ class GenerationStats(BaseModel):
     nodes_grown: int
     growth_stopped_reason: str
     remaining_attractors_points: Optional[list[AttractorPoint]] = None
+
+
+class GenerateResponse(BaseModel):
+    scenes: list[SceneData]
+    stats: GenerationStats

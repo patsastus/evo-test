@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 
 import numpy as np
 from PIL import Image
@@ -20,6 +21,8 @@ from projection import (
     to_z_wall_uv,
     uv_to_pixel,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _calculate_intersection_volume(
@@ -46,7 +49,7 @@ def _calculate_intersection_volume(
     )
 
     total_voxels = len(voxel_centers)
-    print(f"Total Voxels checked: {total_voxels}")
+    logger.debug("voxels checked: %d", total_voxels)
 
     in_shadow_z = np.zeros(len(voxel_centers), dtype=bool)
     in_shadow_x = np.zeros(len(voxel_centers), dtype=bool)
@@ -136,9 +139,12 @@ def _calculate_intersection_volume(
         for i in repulsion_indices
     ]
 
-    print(f"Attractors found (Intersection - dark on BOTH): {len(attractors)}")
-    print(f"Repulsion points (White on EITHER): {len(repulsion_points)}")
-    print(f"Shadow Z voxels: {np.sum(in_shadow_z)}")
-    print(f"Shadow X voxels: {np.sum(in_shadow_x)}")
+    logger.debug(
+        "attractors=%d repulsors=%d shadow_z_voxels=%d shadow_x_voxels=%d",
+        len(attractors),
+        len(repulsion_points),
+        np.sum(in_shadow_z),
+        np.sum(in_shadow_x),
+    )
 
     return attractors, repulsion_points
