@@ -7,7 +7,9 @@ import threading
 import time
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Response
 from PIL import Image, UnidentifiedImageError
 
 from config import MAX_IMAGE_BYTES, MAX_IMAGE_DIM, MAX_RUN_SECONDS, MAX_TOTAL_NODES
@@ -23,6 +25,7 @@ from models import (
     TreeGenome,
     TreeNode,
 )
+from mesh import build_scene_mesh, mesh_report
 from scene import _export_to_obj
 from sca import _generate_uuid, grow_tree
 from shadow import _generate_shadow_image, calculate_fitness
@@ -297,3 +300,24 @@ def _generate(
 @router.post("/export/obj")
 def export_obj(request: ExportObjRequest):
     return {"obj": _export_to_obj(request.scene)}
+
+
+@router.post("/export/mesh")
+def export_mesh(request: ExportObjRequest, format: Literal["stl", "obj"] = "stl"):
+    """Printable solid (tubes + standard foot with keyed sockets), 100 mm scale."""
+    try:
+        mesh = build_scene_mesh(request.scene.trees)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    data = mesh.export(file_type=format)
+    if isinstance(data, str):
+        data = data.encode()
+    media = "model/stl" if format == "stl" else "text/plain"
+    return Response(
+        content=data,
+        media_type=media,
+        headers={
+            "Content-Disposition": f'attachment; filename="scene.{format}"',
+            "X-Mesh-Watertight": str(mesh_report(mesh)["watertight"]).lower(),
+        },
+    )

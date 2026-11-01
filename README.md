@@ -145,7 +145,8 @@ uv run pytest
 | --- | --- |
 | `POST /scenes/generate` | Grow candidate trees from target shadows; supports continuing from `parent_nodes` + `remaining_attractors`, and `run_until_complete`. |
 | `POST /scenes/abort[?request_id=…]` | Abort one in-flight generation by id, or all if no id is given. |
-| `POST /export/obj` | Export a scene as Wavefront `.obj`. |
+| `POST /export/obj` | Export the tree skeleton (vertices + line elements, no solid geometry). |
+| `POST /export/mesh?format=stl\|obj` | Export a printable, watertight solid at 100 mm scale: tubes along the branches fused with a standard foot that has keyed sockets (see `backend/connector.py`). |
 
 Requests are bounded (see `backend/config.py`: candidates ≤ 16, tree count ≤ 10, `max_new_nodes` ≤ 5000, ≤ 20,000 nodes per tree, images ≤ 5 MB / 4096 px, 60 s wall-clock budget). Invalid input returns 4xx.
 

@@ -56,3 +56,8 @@ MAX_ATTRACTORS = 20000  # voxel grid yields at most ~9.3k, so this is generous
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_DIM = 4096
 MAX_RUN_SECONDS = 60  # wall-clock budget per generate request (checked between growth passes)
+
+
+# Print-space scale: 1 scene unit (the scene box is 10 units wide) == 10 mm,
+# i.e. the 10-unit-wide scene is 100 mm.
+MM_PER_UNIT = 10.0
