@@ -82,6 +82,8 @@ evo/
 │   ├── scene.py             # Wavefront OBJ exporter
 │   ├── shadow.py            # Shadow projecting, drawing, and fitness scoring
 │   ├── printability.py      # Printability scoring (nozzle profiles, thickness, overhang)
+│   ├── generator.py         # Generation core shared by API and CLI (candidates, growth loop)
+│   ├── cli.py               # Command-line prototype: image -> STL + previews + report
 │   ├── mesh.py              # Tree -> watertight solid with standard foot
 │   ├── connector.py         # Shared foot/peg spec (keyed sockets, clearance)
 │   ├── projection.py        # Projector seam: lights -> wall coords (parallel walls today; point lights plug in here)
@@ -141,6 +143,15 @@ Run the tests:
 ```bash
 uv run pytest
 ```
+
+#### Command line (no server or frontend needed)
+
+```bash
+cd backend
+uv run python cli.py ../tests/images/solids.png --out out/solids --seed 1
+```
+
+Grows several candidate trees (default 4), keeps the one with the best shadow match × printability, and writes to `--out`: `scene.stl` (printable solid with the standard foot), `shadows.png` (rendered shadows), `comparison.png` (target above, rendered below) and `report.json` (scores, printability details, mesh checks, all candidates). Useful options: `--nozzle 0.4|0.2`, `--candidates N`, `--max-total-nodes N` (default 4000: fewer nodes = simpler tree to print, lower shadow match), `--tree-count N`, `--time-limit SEC`, and `--seed S` to make a run reproducible. The target image holds both shadows side by side (left half = light 0, right half = light 1).
 
 #### API
 
